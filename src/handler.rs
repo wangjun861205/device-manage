@@ -13,106 +13,83 @@ use serde::{Serialize, Deserialize};
 use rocket::request::Form;
 
 #[post("/device_info", format = "application/json", data = "<info>")]
-pub fn add_device_info(conn: MysqlConn, info: Json<model::DeviceInfoInsert>) -> Result<String> {
-    match diesel::insert_into(device_info::table)
-        .values(info.0)
-        .execute(&*conn)
-    {
-        Ok(_) => Ok(Json("success".to_owned())),
-        Err(e) => Err(DaoError::new(&format!("新建设备信息失败: {}", e))),
-    }
+pub fn add_device_info(conn: MysqlConn, info: Json<model::DeviceInfoInsert>) -> Result<usize> {
+    Ok(Json(diesel::insert_into(device_info::table)
+    .values(info.0)
+    .execute(&*conn)?))
 }
 
 #[post("/device_infos", format="application/json", data="<infos>", rank = 1)]
 pub fn bulk_add_device_info(conn: MysqlConn, infos: Json<Vec<model::DeviceInfoInsert>>) -> Result<usize> {
-      conn.transaction(||{
+      Ok(Json(conn.transaction::<_, diesel::result::Error, _>(||{
             for info in infos.0.into_iter() {
-                let res = diesel::insert_into(device_info::table).values(&info).execute(&*conn);
-                if res.is_err() {
-                    return res
-                }
+                diesel::insert_into(device_info::table).values(&info).execute(&*conn)?;
             }
-            Ok(1)
-      }).map_or_else(|e| Err(DaoError::new(&format!("{}", e))), |t| Ok(Json(t)))
+            Ok(1 as usize)
+      })?))
 }
 
 #[get("/device_info/<id>")]
 pub fn get_device_info(conn: MysqlConn, id: i32) -> Result<model::DeviceInfo> {
-    let dev = device_info::table
+    Ok(
+        Json(
+            device_info::table
         .find(id)
-        .first::<model::DeviceInfo>(&*conn);
-    match dev {
-        Ok(d) => Ok(Json(d)),
-        Err(e) => Err(DaoError::new(&format!("获取设备信息失败: {}", e))),
-    }
+        .first::<model::DeviceInfo>(&*conn)?))
 }
 
-#[get("/device_info?<name>&<model>&<maintain_interval>&<page>&<size>")]
-pub fn query_device_info(
-    conn: MysqlConn,
-    name: Option<String>,
-    model: Option<String>,
-    maintain_interval: Option<i32>,
-    page: i64,
-    size: i64,
-) -> Result<Vec<model::DeviceInfo>> {
-    let mut query = device_info::table
-        .limit(size)
-        .offset((page - 1) * size)
-        .into_boxed();
-    if name.is_some() {
-        query = query.filter(device_info::name.like(format!("%{}%", name.unwrap())));
+#[get("/device_info?<query..>")]
+pub fn query_device_info(conn: MysqlConn, query: Form<model::DeviceInfoQuery>) -> Result<Vec<model::DeviceInfo>> {
+    let mut q = device_info::table.into_boxed();
+    if let Some(v) = query.0.name {
+        q = q.filter(device_info::name.like(format!("%{}%", v)));
     }
-    if model.is_some() {
-        query = query.filter(device_info::model.like(format!("%{}%", model.unwrap())));
+    if let Some(v) = query.0.model {
+        q = q.filter(device_info::model.like(format!("%{}%", v)));
     }
-    if maintain_interval.is_some() {
-        query = query.filter(device_info::maintain_interval.eq(maintain_interval.unwrap()));
+    if let Some(v) = query.0.maintain_interval {
+        q = q.filter(device_info::maintain_interval.eq(v));
     }
-    let dev_infos: std::result::Result<Vec<model::DeviceInfo>, _> = query.load(&*conn);
-    match dev_infos {
-        Ok(l) => Ok(Json(l)),
-        Err(e) => Err(DaoError::new(&format!("查询设备信息失败: {}", e))),
+    if let Some(pv) = query.0.page {
+        if let Some(sv) = query.0.size {
+            q = q.limit(sv).offset((pv-1)*sv)
+        }
     }
+    Ok(Json(q.load(&*conn)?))
 }
+
 
 #[delete("/device_info/<id>")]
 pub fn delete_device_info(conn: MysqlConn, id: i32) -> Result<usize> {
-    diesel::delete(device_info::table.filter(device_info::id.eq(id)))
-    .execute(&*conn)
-    .map_or_else(|e| Err(DaoError::new(&format!("{}", e))), |r| Ok(Json(r)))
+    Ok(Json(diesel::delete(device_info::table.filter(device_info::id.eq(id))).execute(&*conn)?))
 }
 
 #[put("/device_info/<id>", format="application/json", data="<req>")]
 pub fn update_device_info(conn: MysqlConn, id: i32, req: Json<model::DeviceInfoUpdate>) -> Result<usize> {
-    diesel::update(device_info::table.filter(device_info::id.eq(id)))
-    .set(&req.0)
-    .execute(&*conn)
-    .map_or_else(|e| Err(DaoError::new(&format!("{}", e))), |r| Ok(Json(r)))
+    Ok(
+        Json(
+            diesel::update(device_info::table.filter(device_info::id.eq(id)))
+            .set(&req.0)
+            .execute(&*conn)?
+       )
+    )
 }
 
 #[post("/device", format = "application/json", data = "<dev>")]
-pub fn add_device(conn: MysqlConn, dev: Json<model::DeviceInsert>) -> Result<String> {
-    match diesel::insert_into(device::table)
+pub fn add_device(conn: MysqlConn, dev: Json<model::DeviceInsert>) -> Result<usize> {
+    Ok(Json(diesel::insert_into(device::table)
         .values(dev.0)
-        .execute(&*conn)
-    {
-        Ok(_) => Ok(Json("success".into())),
-        Err(e) => Err(DaoError::new(&format!("新建设备失败: {}", e))),
-    }
+        .execute(&*conn)?))
 }
 
 #[post("/devices", format="application/json", data="<devs>")]
 pub fn bulk_add_device(conn: MysqlConn, devs: Json<Vec<model::DeviceInsert>>) -> Result<usize> {
-    conn.transaction(|| {
+    Ok(Json(conn.transaction::<_, diesel::result::Error, _>(|| {
         for dev in devs.0.into_iter() {
-            let res = diesel::insert_into(device::table).values(&dev).execute(&*conn);
-            if res.is_err() {
-                return res
-            }
+            diesel::insert_into(device::table).values(&dev).execute(&*conn)?;
         }
         Ok(1)
-    }).map_or_else(|e| Err(DaoError::new(&format!("{}", e))), |t| Ok(Json(t)))
+    })?))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -122,95 +99,79 @@ pub struct DeviceResp {
 }
 
 #[get("/device/<id>")]
-pub fn get_device(conn: MysqlConn, id: i32) -> Result<DeviceResp> {
-    let dev = device::table.find(id).first::<model::Device>(&*conn);
-    match dev {
-        Ok(d) => {
-            let info = device_info::table.find(d.device_info_id).first(&*conn);
-            match info {
-                Ok(i) => { 
-                    Ok(Json(DeviceResp{
-                        device: d,
-                        device_info: i,
-                    }))
-                },
-                Err(e) => {
-                    Err(DaoError::new(&format!("获取设备信息失败: {}", e)))
-                }
-            }
-        },
-        Err(e) => {
-            Err(DaoError::new(&format!("获取设备失败: {}", e)))
-        }
-    }
+pub fn get_device(conn: MysqlConn, id: i32) -> Result<model::Device> {
+    Ok(Json(device::table.find(id).first::<model::Device>(&*conn)?))
 }
 
+
 #[get("/device?<query..>")]
-pub fn query_device(conn: MysqlConn, query: model::DeviceQuery) -> Result<Vec<DeviceResp>> {
-    let mut q = device_info::table.inner_join(device::table).into_boxed();
-    if query.name.is_some() {
-        q = q.filter(device_info::name.like(format!("%{}%", query.name.unwrap())));
+pub fn query_device(conn: MysqlConn, query: Form<model::DeviceQuery>) -> Result<Vec<model::Device>> {
+    let mut q = device::table.into_boxed();
+    if let Some(v) = query.0.name {
+        q = q.filter(device::name.like(format!("%{}%", v)));
     }
-    if query.model.is_some() {
-        q = q.filter(device_info::model.like(format!("%{}%", query.model.unwrap())));
+    if let Some(v) = query.0.model {
+        q = q.filter(device::model.like(format!("%{}%", v)));
     }
-    if query.unicode.is_some() {
-        q = q.filter(device::unicode.like(format!("%{}%", query.unicode.unwrap())));
+    if let Some(v) = query.0.maintain_interval {
+        q = q.filter(device::maintain_interval.eq(v));
     }
-    if query.last_start_at.is_some() {
-        q = q.filter(device::last_start_at.eq(query.last_start_at.unwrap()));
+    if let Some(v) = query.0.unicode {
+        q = q.filter(device::unicode.like(format!("%{}%", v)));
     }
-    if query.last_stop_at.is_some() {
-        q = q.filter(device::last_stop_at.eq(query.last_stop_at.unwrap()))
+    if let Some(v) = query.0.last_start_at_begin {
+        q = q.filter(device::last_start_at.ge(v.0));
     }
-    if query.total_duration.is_some() {
-        q = q.filter(device::total_duration.eq(query.total_duration.unwrap()));
+    if let Some(v) = query.0.last_start_at_end {
+        q = q.filter(device::last_start_at.lt(v.0));
     }
-    if query.status.is_some() {
-        q = q.filter(device::status.eq(query.status.unwrap()));
+    if let Some(v) = query.0.last_stop_at_begin {
+        q = q.filter(device::last_stop_at.ge(v.0))
     }
-    if query.page.is_some() && query.size.is_some() {
-        q = q.limit(query.size.unwrap()).offset((query.page.unwrap()-1)*query.size.unwrap())
+    if let Some(v) = query.0.total_duration_begin {
+        q = q.filter(device::total_duration.ge(v));
     }
-    let l = q.load::<(model::DeviceInfo, model::Device)>(&*conn).unwrap();
-    Ok(Json(l.into_iter().map(|t| {
-        DeviceResp{
-            device_info: t.0,
-            device: t.1,
+    if let Some(v) = query.0.total_duration_end {
+        q = q.filter(device::total_duration.lt(v))
+    }
+    if let Some(v) = query.0.status {
+        q = q.filter(device::status.eq(v));
+    }
+    if let Some(pv) = query.0.page {
+        if let Some(sv) = query.0.size {
+            q = q.limit(sv).offset((pv-1)*sv)
         }
-    }).collect()))
+    }
+    Ok(Json(q.load(&*conn)?))
 }
 
 #[put("/device/<id>", format="application/json", data="<req>")]
 pub fn update_device(conn: MysqlConn, id: i32, req: Json<model::DeviceUpdate>) -> Result<usize> {
-    diesel::update(device::table.filter(device::id.eq(id)))
+     Ok(Json(diesel::update(device::table.filter(device::id.eq(id)))
     .set(&req.0)
-    .execute(&*conn)
-    .map_or_else(|e| Err(DaoError::new(&format!("{}", e))), |r| Ok(Json(r)))
+    .execute(&*conn)?))
 }
 
 #[delete("/device/<id>")]
 pub fn delete_device(conn: MysqlConn, id: i32) -> Result<usize> {
-    diesel::delete(device::table.filter(device::id.eq(id)))
-    .execute(&*conn)
-    .map_or_else(|e| Err(DaoError::new(&format!("{}", e))), |t| Ok(Json(t)))
+    Ok(Json(diesel::delete(device::table.filter(device::id.eq(id)))
+    .execute(&*conn)?))
 }
 
 #[post("/subsystem_info", format="application/json", data="<info>")]
 pub fn add_subsystem_info(conn: MysqlConn, info: Json<model::SubsystemInfoInsert>) -> Result<usize> {
-    diesel::insert_into(subsystem_info::table)
-    .values(info.0).execute(&*conn)
-    .map_or_else(|e| Err(DaoError::from(e)), |t| Ok(Json(t)))
+    Ok(Json(diesel::insert_into(subsystem_info::table)
+    .values(info.0).execute(&*conn)?))
 }
 
 #[post("/subsystem_infos", format="application/json", data="<infos>")]
 pub fn bulk_add_subsystem_info(conn: MysqlConn, infos: Json<Vec<model::SubsystemInfoInsert>>) -> Result<usize> {
-    conn.transaction(|| {
+    Ok(Json(conn.transaction::<_, diesel::result::Error, _>(|| {
         for info in infos.0.into_iter() {
             diesel::insert_into(subsystem_info::table).values(info).execute(&*conn)?;
         }
         Ok(1)
-    }).map_or_else(|e: diesel::result::Error| Err(DaoError::from(e)), |t| Ok(Json(t as usize)))
+    })?))
 }
 
 #[get("/subsysetem_info/<id>")]
@@ -268,25 +229,22 @@ pub fn get_subsystem(conn: MysqlConn, id: i32) -> Result<model::Subsystem> {
     .map_or_else(|e| Err(DaoError::from(e)), |t| Ok(Json(t)))
 }
 
-#[derive(Debug, Serialize, Deserialize, Queryable)]
-pub struct DeviceGroupResp(model::Device, model::DeviceInfo);
-
 
 #[derive(Debug, Serialize, Deserialize, Queryable)]
-pub struct SubsystemResp(model::Subsystem, model::SubsystemInfo, DeviceGroupResp);
+pub struct SubsystemResp(model::Subsystem, model::Device);
 
 
 #[get("/subsystems?<query..>")]
 pub fn query_subsystem(conn: MysqlConn, query: Form<model::SubsystemQuery>) -> Result<Vec<SubsystemResp>> {
-    let mut q = subsystem::table.inner_join(subsystem_info::table).inner_join(device::table.inner_join(device_info::table)).into_boxed();
+    let mut q = subsystem::table.inner_join(device::table).into_boxed();
     if let Some(v) = query.0.device_name { 
-        q = q.filter(device_info::name.eq(v));
+        q = q.filter(device::name.eq(v));
     }
     if let Some(v) = query.0.device_model { 
-        q = q.filter(device_info::model.eq(v)); 
+        q = q.filter(device::model.eq(v)); 
     }
     if let Some(v) =  query.0.device_maintain_interval {
-        q = q.filter(device_info::maintain_interval.eq(v));
+        q = q.filter(device::maintain_interval.eq(v));
     }
     if let Some(v) = query.0.device_unicode{
         q = q.filter(device::unicode.eq(v));
@@ -304,10 +262,10 @@ pub fn query_subsystem(conn: MysqlConn, query: Form<model::SubsystemQuery>) -> R
         q = q.filter(device::status.eq(v));
     }
     if let Some(v) = query.0.subsystem_name {
-        q = q.filter(subsystem_info::name.eq(v))
+        q = q.filter(subsystem::name.eq(v))
     }
     if let Some(v) = query.0.subsystem_maintain_interval {
-        q = q.filter(subsystem_info::maintain_interval.eq(v));
+        q = q.filter(subsystem::maintain_interval.eq(v));
     }
     if let Some(pv) = query.0.page {
         if let Some(sv) = query.0.size {
@@ -319,9 +277,8 @@ pub fn query_subsystem(conn: MysqlConn, query: Form<model::SubsystemQuery>) -> R
 
 #[delete("/subsystem/<id>")]
 pub fn update_subsystem(conn: MysqlConn, id: i32) -> Result<usize> {
-    diesel::delete(subsystem::table)
-    .filter(subsystem::id.eq(id)).execute(&*conn)
-    .map_or_else(|e| Err(DaoError::from(e)), |t| Ok(Json(t)))
+    Ok(Json(diesel::delete(subsystem::table)
+    .filter(subsystem::id.eq(id)).execute(&*conn)?))
 }
 
 

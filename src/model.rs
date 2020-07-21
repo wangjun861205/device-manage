@@ -10,7 +10,6 @@ use std::io::Write;
 #[macro_use]
 use rocket::request::*;
 use std::default::Default;
-use std::convert::From;
 use rocket::http::RawStr;
 
 
@@ -65,12 +64,37 @@ impl<'v> FromFormValue<'v> for DeviceStatus {
     }
 }
 
+
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MyDatetime(pub NaiveDateTime);
+
+impl<'v> FromFormValue<'v> for MyDatetime {
+    type Error = chrono::ParseError;
+
+    fn from_form_value(form_value: &'v RawStr) -> Result<Self, Self::Error> {
+        let t = NaiveDateTime::parse_from_str(form_value.as_str(), "%Y-%m-%d %H:%M:%S")?;
+        Ok(MyDatetime(t))
+    }
+}
+
+//  ===================================================================================
+
 #[derive(Insertable, Debug, Deserialize)]
 #[table_name = "device_info"]
 pub struct DeviceInfoInsert {
     pub name: String,
     pub model: String,
     pub maintain_interval: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromForm)]
+pub struct DeviceInfoQuery {
+    pub name: Option<String>,
+    pub model: Option<String>,
+    pub maintain_interval: Option<i32>,
+    pub page: Option<i64>,
+    pub size: Option<i64>,
 }
 
 #[derive(Queryable, Debug, Serialize, Deserialize, Identifiable)]
@@ -95,7 +119,9 @@ pub struct DeviceInfoUpdate {
 #[derive(Insertable, Debug, Deserialize)]
 #[table_name = "device"]
 pub struct DeviceInsert {
-    pub device_info_id: i32,
+    pub name: String,
+    pub model: String,
+    pub maintain_interval: i32,
     pub unicode: String,
     pub last_start_at: Option<NaiveDateTime>,
     pub last_stop_at: Option<NaiveDateTime>,
@@ -103,11 +129,14 @@ pub struct DeviceInsert {
     pub status: DeviceStatus,
 }
 
+
 #[derive(Queryable, Debug, Deserialize, Serialize, Identifiable, Associations)]
 #[table_name = "device"]
 pub struct Device {
     pub id: i32,
-    pub device_info_id: i32,
+    pub name: String,
+    pub model: String,
+    pub maintain_interval: i32,
     pub unicode: String,
     pub last_start_at: Option<NaiveDateTime>,
     pub last_stop_at: Option<NaiveDateTime>,
@@ -117,87 +146,30 @@ pub struct Device {
     pub update_at: NaiveDateTime,
 }
 
-#[derive(Debug, Queryable, Default)]
+#[derive(Debug, Queryable, Default, Deserialize, Serialize, FromForm)]
 pub struct DeviceQuery {
     pub name: Option<String>,
     pub model: Option<String>,
     pub maintain_interval: Option<i32>,
     pub unicode: Option<String>,
-    pub last_start_at: Option<NaiveDateTime>,
-    pub last_stop_at: Option<NaiveDateTime>,
-    pub total_duration: Option<i32>,
+    pub last_start_at_begin: Option<MyDatetime>,
+    pub last_start_at_end: Option<MyDatetime>,
+    pub last_stop_at_begin: Option<MyDatetime>,
+    pub last_stop_at_end: Option<MyDatetime>,
+    pub total_duration_begin: Option<i32>,
+    pub total_duration_end: Option<i32>,
     pub status: Option<DeviceStatus>,
     pub page: Option<i64>,
     pub size: Option<i64>,
 }
 
-impl<'q> FromQuery<'q> for DeviceQuery {
-    type Error = ();
-    fn from_query(query: Query<'q>) -> Result<Self, Self::Error> {
-        let mut dq = DeviceQuery{
-            ..Default::default()
-        };
-        for q in query.into_iter() {
-            match q.key.as_str() {
-                "name" => dq.name = Some(q.value.url_decode().unwrap().to_string()),
-                "model" => dq.model = Some(q.value.url_decode().unwrap().to_string()),
-                "maintain_interval" => {
-                    match q.value.to_string().parse::<i32>() {
-                        Ok(i) => dq.maintain_interval = Some(i),
-                        Err(_) => { return Err(()) }
-                    }
-                },
-                "unicode" => dq.unicode = Some(q.value.to_string()),
-                "last_start_at" => {
-                    match NaiveDateTime::parse_from_str(q.value.url_decode().unwrap().as_str(), "%Y-%m-%d %H:%M:%S") {
-                        Ok(t) => dq.last_start_at = Some(t),
-                        Err(_) => { return Err(()) },
-                    }
-                },
-                "last_stop_at" => {
-                    match NaiveDateTime::parse_from_str(q.value.url_decode().unwrap().as_str(), "%Y-%m-%d %H:%M:%S") {
-                        Ok(t) => dq.last_stop_at = Some(t),
-                        Err(_) => { return Err(()) },
-                    }
-                },
-                "total_duration" => {
-                    match q.value.to_string().parse::<i32>() {
-                        Ok(i) => dq.total_duration = Some(i),
-                        Err(_) => { return Err(()) }
-                    }
-                },
-                "status" => {
-                    match q.value.as_str() {
-                        "Running" => dq.status = Some(DeviceStatus::Running),
-                        "Stopped" => dq.status = Some(DeviceStatus::Stopped),
-                        "Breakdown" => dq.status = Some(DeviceStatus::Breakdown),
-                        _ => { return Err(()) },
-                    }
-                },
-                "page" => {
-                    match q.value.to_string().parse::<i64>() {
-                        Ok(i) => dq.page = Some(i),
-                        Err(_) => { return Err(()) }
-                    }
-                },
-                "size" => {
-                    match q.value.to_string().parse::<i64>() {
-                        Ok(i) => dq.size = Some(i),
-                        Err(_) => { return Err(()) }
-                    }
-                },
-                _ => {},
-            }
-        }
-        Ok(dq)
-    }
-}
 
 
 #[derive(Debug, AsChangeset, Serialize, Deserialize)]
 #[table_name="device"]
 pub struct DeviceUpdate {
-    pub device_info_id: Option<i32>,
+    pub name: Option<String>,
+    pub model: Option<String>,
     pub unicode: Option<String>,
     pub last_start_at: Option<NaiveDateTime>,
     pub last_stop_at: Option<NaiveDateTime>,
@@ -237,20 +209,10 @@ pub struct SubsystemInfo {
 #[table_name = "subsystem"]
 pub struct SubsystemInsert {
     pub device_id: i32,
-    pub subsystem_info_id: i32,
+    pub name: String,
+    pub maintain_interval: i32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MyDatetime(pub NaiveDateTime);
-
-impl<'v> FromFormValue<'v> for MyDatetime {
-    type Error = chrono::ParseError;
-
-    fn from_form_value(form_value: &'v RawStr) -> Result<Self, Self::Error> {
-        let t = NaiveDateTime::parse_from_str(form_value.as_str(), "%Y-%m-%d %H:%M:%S")?;
-        Ok(MyDatetime(t))
-    }
-}
 
 
 
@@ -279,7 +241,8 @@ pub struct SubsystemQuery {
 pub struct Subsystem {
     pub id: i32,
     pub device_id: i32,
-    pub subsystem_info_id: i32,
+    pub name: String,
+    pub maintain_interval: i32,
     pub create_at: NaiveDateTime,
     pub udpate_at: NaiveDateTime,
 }
@@ -300,8 +263,10 @@ pub struct ComponentInfoQuery<'a> {
 #[derive(Insertable, Debug)]
 #[table_name = "component"]
 pub struct ComponentInsert {
-    pub component_info_id: i32,
     pub subsystem_id: i32,
+    pub name: String,
+    pub model: String,
+    pub maintain_interval: i32,
 }
 
 #[derive(Queryable, Debug)]
@@ -310,3 +275,4 @@ pub struct ComponentQuery {
     pub subsystem_id: i32,
     pub component_info_id: String,
 }
+
