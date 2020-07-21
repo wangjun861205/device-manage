@@ -1,0 +1,19 @@
+[package]
+name = "device-manage"
+version = "0.1.0"
+authors = ["wangjun861205 <444055828@qq.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+diesel = { version = "*", features = ["mysql", "r2d2", "chrono"] }
+rocket = "*"
+rocket_contrib = "*"
+dotenv = "*"
+chrono = { version = "*", features = ["serde"] }
+serde = { version = "*", features = ["derive"]}
+serde_json = "*"
+
+
+
