@@ -92,7 +92,8 @@ pub struct DeviceInfoInsert {
 pub struct DeviceInfoQuery {
     pub name: Option<String>,
     pub model: Option<String>,
-    pub maintain_interval: Option<i32>,
+    pub maintain_interval_begin: Option<i32>,
+    pub maintain_interval_end: Option<i32>,
     pub page: Option<i64>,
     pub size: Option<i64>,
 }
@@ -130,7 +131,7 @@ pub struct DeviceInsert {
 }
 
 
-#[derive(Queryable, Debug, Deserialize, Serialize, Identifiable, Associations)]
+#[derive(Queryable, Debug, Deserialize, Serialize, Identifiable, Associations, Clone)]
 #[table_name = "device"]
 pub struct Device {
     pub id: i32,
@@ -150,7 +151,8 @@ pub struct Device {
 pub struct DeviceQuery {
     pub name: Option<String>,
     pub model: Option<String>,
-    pub maintain_interval: Option<i32>,
+    pub maintain_interval_begin: Option<i32>,
+    pub maintain_interval_end: Option<i32>,
     pub unicode: Option<String>,
     pub last_start_at_begin: Option<MyDatetime>,
     pub last_start_at_end: Option<MyDatetime>,
@@ -186,10 +188,22 @@ pub struct SubsystemInfoInsert {
 
 #[derive(Queryable, Debug, Deserialize, Serialize, FromForm)]
 pub struct SubsystemInfoQuery {
+    pub device_info_name: Option<String>,
+    pub device_info_model: Option<String>,
+    pub device_info_maintain_interval_begin: Option<i32>,
+    pub device_info_maintain_interval_end: Option<i32>,
     pub name: Option<String>,
-    pub maintain_interval: Option<i32>,
+    pub maintain_interval_begin: Option<i32>,
+    pub maintain_interval_end: Option<i32>,
     pub page: Option<i64>,
     pub size: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, Serialize, AsChangeset, FromForm)]
+#[table_name="subsystem_info"]
+pub struct SubsystemInfoUpdate {
+    pub name: Option<String>,
+    pub maintain_interval: Option<i32>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Identifiable, Associations, Queryable)]
@@ -203,8 +217,6 @@ pub struct SubsystemInfo {
 }
 
 
-
-
 #[derive(Insertable, Debug, Deserialize, Serialize)]
 #[table_name = "subsystem"]
 pub struct SubsystemInsert {
@@ -213,22 +225,31 @@ pub struct SubsystemInsert {
     pub maintain_interval: i32,
 }
 
-
-
+#[derive(Debug, Deserialize, Serialize, AsChangeset)]
+#[table_name="subsystem"]
+pub struct SubsystemUpdate {
+    pub name: Option<String>,
+    pub maintain_interval: Option<i32>,
+}
 
 
 #[derive(Queryable, Debug, Deserialize, Serialize, Default, FromForm)]
 pub struct SubsystemQuery {
     pub device_name: Option<String>,
     pub device_model: Option<String>,
-    pub device_maintain_interval: Option<i32>,
+    pub device_maintain_interval_begin: Option<i32>,
+    pub device_maintain_interval_end: Option<i32>,
     pub device_unicode: Option<String>,
-    pub device_last_start_at: Option<MyDatetime>,
-    pub device_last_stop_at: Option<MyDatetime>,
-    pub device_total_duration: Option<i32>,
+    pub device_last_start_at_begin: Option<MyDatetime>,
+    pub device_last_start_at_end: Option<MyDatetime>,
+    pub device_last_stop_at_begin: Option<MyDatetime>,
+    pub device_last_stop_at_end: Option<MyDatetime>,
+    pub device_total_duration_begin: Option<i32>,
+    pub device_total_duration_end: Option<i32>,
     pub device_status: Option<DeviceStatus>,
     pub subsystem_name: Option<String>,
-    pub subsystem_maintain_interval: Option<i32>,
+    pub maintain_interval_begin: Option<i32>,
+    pub maintain_interval_end: Option<i32>,
     pub page: Option<i64>,
     pub size: Option<i64>,
 }
@@ -236,8 +257,9 @@ pub struct SubsystemQuery {
 
 
 
-#[derive(Queryable, Debug, Deserialize, Serialize, Associations, Identifiable)]
+#[derive(Queryable, Debug, Deserialize, Serialize, Associations, Identifiable, Clone)]
 #[table_name="subsystem"]
+#[belongs_to(Device)]
 pub struct Subsystem {
     pub id: i32,
     pub device_id: i32,
@@ -247,17 +269,60 @@ pub struct Subsystem {
     pub udpate_at: NaiveDateTime,
 }
 
-#[derive(Insertable, Debug)]
-#[table_name = "component_info"]
+#[derive(Queryable, Debug, Serialize, Deserialize)]
 pub struct ComponentInfo {
+    pub id: i32,
     pub name: String,
     pub model: String,
+    pub maintain_interval: i32,
+    pub create_at: NaiveDateTime,
+    pub update_at: NaiveDateTime,
 }
 
-#[derive(Queryable, Debug)]
-pub struct ComponentInfoQuery<'a> {
+#[derive(Insertable, Debug, Deserialize, Serialize)]
+#[table_name="component_info"]
+pub struct ComponentInfoInsert {
+    pub name: String,
+    pub model: String,
+    pub maintain_interval: i32,
+}
+
+#[derive(Debug, Deserialize, Serialize, AsChangeset)]
+#[table_name="component_info"]
+pub struct ComponentInfoUpdate {
+    pub name: Option<String>,
+    pub model: Option<String>,
+    pub maintain_interval: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ComponentInfoQuery {
+    pub device_info_name: Option<String>,
+    pub device_info_model: Option<String>,
+    pub device_info_maintain_interval_begin: Option<i32>,
+    pub device_info_maintain_interval_end: Option<i32>,
+    pub subsystem_info_name: Option<String>,
+    pub subsystem_info_maintain_interval_begin: Option<i32>,
+    pub subsystem_info_maintain_interval_end: Option<i32>,
+    pub name: Option<String>,
+    pub model: Option<String>,
+    pub maintain_interval_begin: Option<i32>,
+    pub maintain_interval_end: Option<i32>,
+    pub page: Option<i64>,
+    pub size: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Queryable, Associations, Identifiable)]
+#[table_name="component"]
+#[belongs_to(Subsystem)]
+pub struct Component {
     pub id: i32,
-    pub name: &'a str,
+    pub subsystem_id: i32,
+    pub name: String,
+    pub model: String,
+    pub maintain_interval: i32,
+    pub create_at: NaiveDateTime,
+    pub update_at: NaiveDateTime,
 }
 
 #[derive(Insertable, Debug)]
@@ -276,3 +341,14 @@ pub struct ComponentQuery {
     pub component_info_id: String,
 }
 
+
+
+#[derive(Debug, Serialize, Deserialize, Associations, Identifiable)]
+#[table_name="deviceinfo_subsysteminfo"]
+#[belongs_to(DeviceInfo)]
+#[belongs_to(SubsystemInfo)]
+pub struct DeviceinfoSubsysteminfo {
+    pub id: i32,
+    pub device_info_id: i32,
+    pub subsystem_info_id: i32,
+}
