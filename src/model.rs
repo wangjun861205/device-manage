@@ -334,11 +334,29 @@ pub struct ComponentInsert {
     pub maintain_interval: i32,
 }
 
-#[derive(Queryable, Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ComponentQuery {
-    pub id: i32,
-    pub subsystem_id: i32,
-    pub component_info_id: String,
+    pub device_name: Option<String>,
+    pub device_model: Option<String>,
+    pub device_maintain_interval_begin: Option<i32>,
+    pub device_maintain_interval_end: Option<i32>,
+    pub subsystem_name: Option<String>,
+    pub subsystem_maintain_interval_begin: Option<i32>,
+    pub subsystem_maintain_interval_end: Option<i32>,
+    pub name: Option<String>,
+    pub model: Option<String>,
+    pub maintain_interval_begin: Option<i32>,
+    pub maintain_interval_end: Option<i32>,
+    pub page: Option<i64>,
+    pub size: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, AsChangeset)]
+#[table_name="component"]
+pub struct ComponentUpdate {
+    pub name: Option<String>,
+    pub model: Option<String>,
+    pub maintain_interval: Option<i32>,
 }
 
 

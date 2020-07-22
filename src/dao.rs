@@ -362,4 +362,66 @@ pub fn query_subsystem(conn: &MysqlConnection, query: SubsystemQuery) -> diesel:
     let devs: Vec<Device> = dev_subs.iter().map(|d| d.0.clone()).collect();
     let subs: Vec<Subsystem> = dev_subs.iter().map(|d| d.1.clone()).collect();
     let coms: Vec<Vec<Component>> = Component::belonging_to(&subs).load(conn)?.grouped_by(&subs);
+    Ok(dev_subs.into_iter().zip(coms).map(|t| ((t.0).0, (t.0).1, t.1)).collect())
+}
+
+// =================================================component=========================================================
+
+pub fn insert_component(conn: &MysqlConnection, com: ComponentInsert) -> diesel::result::QueryResult<usize> {
+    Ok(diesel::insert_into(component::table).values(com).execute(conn)?)
+}
+
+pub fn delete_component(conn: &MysqlConnection, id: i32) -> diesel::result::QueryResult<usize> {
+    Ok(diesel::delete(component::table.find(id)).execute(conn)?)
+}
+
+pub fn update_component(conn: &MysqlConnection, id: i32, upd: ComponentUpdate) -> diesel::result::QueryResult<usize> {
+    Ok(diesel::update(component::table.find(id)).set(upd).execute(conn)?)
+}
+
+pub fn get_component(conn: &MysqlConnection, id: i32) -> diesel::result::QueryResult<(Device, Subsystem, Component)> {
+    let g: (Device, (Subsystem, Component)) = device::table.inner_join(subsystem::table.inner_join(component::table)).filter(component::id.eq(id)).first(conn)?;
+    Ok((g.0, (g.1).0, (g.1).1))
+}
+
+pub fn query_component(conn: &MysqlConnection, query: ComponentQuery) -> diesel::result::QueryResult<Vec<(Device, Subsystem, Component)>> {
+    let mut q = device::table.inner_join(subsystem::table.inner_join(component::table)).into_boxed();
+    if let Some(v) = query.device_name {
+        q = q.filter(device::name.like(format!("%{}%", v)))
+    }
+    if let Some(v) = query.device_model {
+        q = q.filter(device::model.like(format!("%{}%", v)));
+    }
+    if let Some(v) = query.device_maintain_interval_begin {
+        q = q.filter(device::maintain_interval.ge(v));
+    }
+    if let Some(v) = query.device_maintain_interval_end {
+        q = q.filter(device::maintain_interval.lt(v));
+    }
+    if let Some(v) = query.subsystem_name {
+        q = q.filter(subsystem::name.like(format!("%{}%", v)));
+    }
+    if let Some(v) = query.subsystem_maintain_interval_begin {
+        q = q.filter(subsystem::maintain_interval.ge(v));
+    }
+    if let Some(v) = query.subsystem_maintain_interval_end {
+        q = q.filter(subsystem::maintain_interval.lt(v));
+    }
+    if let Some(v) = query.name {
+        q = q.filter(component::name.like(format!("%{}%", v)));
+    }
+    if let Some(v) = query.model {
+        q = q.filter(component::model.like(format!("%{}%", v)));
+    }
+    if let Some(v) = query.maintain_interval_begin {
+        q = q.filter(component::maintain_interval.ge(v));
+    }
+    if let Some(v) = query.maintain_interval_end {
+        q = q.filter(component::maintain_interval.lt(v));
+    }
+    if let (Some(p), Some(s)) = (query.page, query.size) {
+        q = q.limit(s).offset((p-1)*s)
+    }
+    let g: Vec<(Device, (Subsystem, Component))> = q.load(conn)?;
+    Ok(g.into_iter().map(|t| (t.0, (t.1).0, (t.1).1)).collect())
 }
