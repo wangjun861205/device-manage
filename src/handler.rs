@@ -3,7 +3,6 @@ use super::MysqlConn;
 use super::dao;
 use diesel;
 use rocket_contrib::json::Json;
-use serde::{Serialize, Deserialize};
 use rocket::request::Form;
 use std::fmt::Display;
 use std::convert::From;
