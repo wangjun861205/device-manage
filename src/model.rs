@@ -195,8 +195,12 @@ pub struct SubsystemInfoQuery {
     pub name: Option<String>,
     pub maintain_interval_begin: Option<i32>,
     pub maintain_interval_end: Option<i32>,
-    pub page: Option<i64>,
-    pub size: Option<i64>,
+    pub component_info_name: Option<String>,
+    pub component_info_model: Option<String>,
+    pub component_info_maintain_interval_begin: Option<i32>,
+    pub component_info_maintain_interval_end: Option<i32>,
+    pub page: i64,
+    pub size: i64,
 }
 
 #[derive(Debug, Deserialize, Serialize, AsChangeset, FromForm)]
@@ -295,7 +299,7 @@ pub struct ComponentInfoUpdate {
     pub maintain_interval: Option<i32>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, FromForm)]
 pub struct ComponentInfoQuery {
     pub device_info_name: Option<String>,
     pub device_info_model: Option<String>,
@@ -325,7 +329,7 @@ pub struct Component {
     pub update_at: NaiveDateTime,
 }
 
-#[derive(Insertable, Debug)]
+#[derive(Insertable, Debug, Serialize, Deserialize)]
 #[table_name = "component"]
 pub struct ComponentInsert {
     pub subsystem_id: i32,
@@ -334,7 +338,7 @@ pub struct ComponentInsert {
     pub maintain_interval: i32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, FromForm)]
 pub struct ComponentQuery {
     pub device_name: Option<String>,
     pub device_model: Option<String>,
@@ -361,7 +365,7 @@ pub struct ComponentUpdate {
 
 
 
-#[derive(Debug, Serialize, Deserialize, Associations, Identifiable)]
+#[derive(Debug, Serialize, Deserialize, Associations, Identifiable, Queryable)]
 #[table_name="deviceinfo_subsysteminfo"]
 #[belongs_to(DeviceInfo)]
 #[belongs_to(SubsystemInfo)]
@@ -369,4 +373,15 @@ pub struct DeviceinfoSubsysteminfo {
     pub id: i32,
     pub device_info_id: i32,
     pub subsystem_info_id: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Associations, Identifiable, Queryable)]
+#[table_name="subsysteminfo_componentinfo"]
+#[belongs_to(SubsystemInfo)]
+#[belongs_to(ComponentInfo)]
+pub struct SubsysteminfoComponentinfo {
+    pub id: i32,
+    pub subsystem_info_id: i32,
+    pub component_info_id: i32,
+    pub quantity: i32,
 }
