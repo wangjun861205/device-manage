@@ -93,9 +93,10 @@ pub struct DeviceInfoQuery {
     pub model: Option<String>,
     pub maintain_interval_begin: Option<i32>,
     pub maintain_interval_end: Option<i32>,
-    pub page: Option<i64>,
-    pub size: Option<i64>,
+    pub page: i64,
+    pub size: i64,
 }
+
 
 #[derive(Queryable, Debug, Serialize, Deserialize, Identifiable)]
 #[table_name = "device_info"]

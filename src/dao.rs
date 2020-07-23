@@ -7,12 +7,11 @@ use rocket_contrib::json::Json;
 use std::fmt;
 use std::io::Cursor;
 use std::convert::From;
-use diesel::result::Error;
+use diesel::result::{ QueryResult, Error };
 use super::model::*;
 use super::schema::*;
 use diesel::{ RunQueryDsl, ExpressionMethods, QueryDsl, TextExpressionMethods, BelongingToDsl, GroupedBy };
 use diesel::mysql::MysqlConnection;
-
 
 #[derive(PartialEq, Debug)]
 pub struct DaoError {
@@ -74,7 +73,7 @@ pub fn get_device_info(conn: &MysqlConnection, id: i32) -> diesel::result::Query
     Ok(device_info::table.find(id).first(conn)?)
 }
 
-pub fn query_device_infos(conn: &MysqlConnection, query: DeviceInfoQuery) -> diesel::result::QueryResult<Vec<DeviceInfo>> {
+pub fn query_device_infos(conn: &MysqlConnection, query: DeviceInfoQuery) -> QueryResult<Vec<DeviceInfo>> {
     let mut q = device_info::table.into_boxed();
     if let Some(v) = query.name {
         q = q.filter(device_info::name.like(format!("%{}%", v)));
@@ -88,10 +87,25 @@ pub fn query_device_infos(conn: &MysqlConnection, query: DeviceInfoQuery) -> die
     if let Some(v) = query.maintain_interval_end {
         q = q.filter(device_info::maintain_interval.lt(v));
     }
-    if let (Some(p), Some(s))  = (query.page, query.size) {
-        q = q.limit(s).offset((p-1)*s)
-    }
+    q = q.limit(query.size).offset((query.page-1)*query.size);
     Ok(q.load(conn)?)
+}
+
+pub fn count_device_info(conn: &MysqlConnection, query: DeviceInfoQuery) -> QueryResult<usize> {
+    let mut q = device_info::table.into_boxed();
+    if let Some(v) = query.name {
+        q = q.filter(device_info::name.like(format!("%{}%", v)));
+    }
+    if let Some(v) = query.model {
+        q = q.filter(device_info::model.like(format!("%{}%", v)));
+    }
+    if let Some(v) = query.maintain_interval_begin {
+        q = q.filter(device_info::maintain_interval.ge(v));
+    }
+    if let Some(v) = query.maintain_interval_end {
+        q = q.filter(device_info::maintain_interval.lt(v));
+    }
+    Ok(q.count().execute(conn)?)
 }
 
 // ===================================================subsystem_info======================================================
