@@ -7,7 +7,6 @@ use diesel::sql_types::*;
 use diesel::*;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-#[macro_use]
 use rocket::request::*;
 use std::default::Default;
 use rocket::http::RawStr;
