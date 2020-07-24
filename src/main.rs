@@ -4,6 +4,7 @@ pub mod dao;
 pub mod handler;
 pub mod model;
 pub mod schema;
+pub mod result;
 
 extern crate chrono;
 #[macro_use]

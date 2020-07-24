@@ -1,59 +1,16 @@
 use super::model::*;
 use super::MysqlConn;
 use super::dao;
-use diesel;
+use super::result::{Result};
 use rocket_contrib::json::Json;
 use rocket::request::Form;
-use std::fmt::Display;
-use std::convert::From;
-use rocket::response::Responder;
-use rocket::Request;
-use rocket::response;
-use std::io::Cursor;
-use rocket::http::{ Status, Header };
-use std::fmt;
 
 
 
-#[derive(Debug)]
-pub struct Error {
-    status: Status,
-    detail: String,
-}
-
-impl Error {
-    pub fn new(status: Status, detail: String) -> Self {
-        Self {
-            status,
-            detail,
-        }
-    }
-}
-
-impl Display for Error {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "({}, {})", self.status, self.detail)
-        }
-}
-
-impl From<diesel::result::Error> for Error {
-    fn from(e: diesel::result::Error) -> Error {
-        Self::new(Status::new(599, "database error"), format!("{}", e))
-    }
-}
-
-impl<'r> Responder<'r> for Error {
-    fn respond_to(self, _: &Request) -> response::Result<'r> {
-        response::ResponseBuilder::new(response::Response::new())
-        .status(self.status)
-        .sized_body(Cursor::new(self.detail))
-        .header(Header::new("Content-Type", "text/plain;charset=utf-8"))
-        .ok()
-    }
-}
 
 
-pub type Result<T> = std::result::Result<Json<T>, Error>;
+
+// ===============================================device_info=================================================
 
 
 #[post("/device_info", format = "application/json", data = "<info>")]
@@ -82,10 +39,18 @@ pub fn get_device_info(conn: MysqlConn, id: i32) -> Result<DeviceInfo> {
     Ok(Json(dao::get_device_info(&*conn, id)?))
 }
 
-#[get("/device_info?<query..>")]
-pub fn query_device_info(conn: MysqlConn, query: Form<DeviceInfoQuery>) -> Result<Vec<DeviceInfo>> {
+#[get("/device_infos?<query..>")]
+pub fn query_device_info(conn: MysqlConn, query: Form<DeviceInfoQuery>) -> Result<(Vec<DeviceInfo>, i64)> {
     Ok(Json(dao::query_device_infos(&*conn, query.0)?))
 }
+
+#[get("/subsystem_info/<subinfoid>/device_infos?<query..>")]
+pub fn query_device_info_by_subsystem_info(conn: MysqlConn, subinfoid: i32, query: Form<DeviceInfoQuery>) -> Result<(Vec<DeviceInfo>, i64)> {
+    Ok(Json(dao::query_device_infos_by_subsystem_info(&*conn, subinfoid, query.0)?))
+}
+
+
+//==============================================device===========================================================
 
 
 #[post("/device", format = "application/json", data = "<dev>")]
@@ -113,10 +78,12 @@ pub fn get_device(conn: MysqlConn, id: i32) -> Result<(Device, Vec<(Subsystem, V
     Ok(Json(dao::get_device(&*conn, id)?))
 }
 
-#[get("/device?<query..>")]
+#[get("/devices?<query..>")]
 pub fn query_device(conn: MysqlConn, query: Form<DeviceQuery>) -> Result<Vec<(Device, Vec<(Subsystem, Vec<Component>)>)>> {
     Ok(Json(dao::query_device(&*conn, query.0)?))
 }
+
+//==================================================subsystem_info========================================================
 
 
 #[post("/subsystem_info", format="application/json", data="<info>")]
@@ -145,9 +112,22 @@ pub fn get_subsystem_info(conn: MysqlConn, id: i32) -> Result<(SubsystemInfo, Ve
 }
 
 #[get("/subsystem_infos?<query..>")]
-pub fn query_subsystem_info(conn: MysqlConn, query: Form<SubsystemInfoQuery>) -> Result<Vec<(SubsystemInfo, Vec<DeviceInfo>, Vec<ComponentInfo>)>> {
-    Ok(Json(dao::query_subsystem_info(&*conn, query.0)?))
+pub fn query_subsystem_info(conn: MysqlConn, query: Form<SubsystemInfoQuery>) -> Result<(Vec<SubsystemInfo>, i64)> {
+    Ok(Json(dao::query_subsystem_infos(&*conn, query.0)?))
 }
+
+#[get("/device_info/<devinfoid>/subsystem_infos?<query..>")]
+pub fn query_subsystem_info_by_device_info(conn: MysqlConn, devinfoid: i32, query: Form<SubsystemInfoQuery>) -> Result<(Vec<SubsystemInfo>, i64)> {
+    Ok(Json(dao::query_subsystem_infos_by_device_info(&*conn, devinfoid, query.0)?))
+}
+
+#[get("/component_info/<cominfoid>/subsystem_infos?<query..>")]
+pub fn query_subsystem_info_by_component_info(conn: MysqlConn, cominfoid: i32, query: Form<SubsystemInfoQuery>) -> Result<(Vec<SubsystemInfo>, i64)> {
+    Ok(Json(dao::query_subsystem_infos_by_component_info(&*conn, cominfoid, query.0)?))
+}
+
+
+// =============================================================subsystem=============================================================
 
 #[post("/subsystem", format="application/json", data="<sys>")]
 pub fn add_subsystem(conn: MysqlConn, sys: Json<SubsystemInsert>) -> Result<usize> {
@@ -180,6 +160,9 @@ pub fn query_subsystem(conn: MysqlConn, query: Form<SubsystemQuery>) -> Result<V
 }
 
 
+// ===================================================component_info=======================================================
+
+
 #[post("/component_info", format="application/json", data="<info>")]
 pub fn add_component_info(conn: MysqlConn, info: Json<ComponentInfoInsert>) -> Result<usize> {
     Ok(Json(dao::insert_component_info(&*conn, info.0)?))
@@ -206,8 +189,13 @@ pub fn get_component_info(conn: MysqlConn, id: i32) -> Result<(DeviceInfo, Subsy
 }
 
 #[get("/component_info?<query..>")]
-pub fn query_component_info(conn: MysqlConn, query: Form<ComponentInfoQuery>) -> Result<Vec<(DeviceInfo, SubsystemInfo, ComponentInfo)>> {
-    Ok(Json(dao::query_component_info(&*conn, query.0)?))
+pub fn query_component_info(conn: MysqlConn, query: Form<ComponentInfoQuery>) -> Result<(Vec<ComponentInfo>, i64)> {
+    Ok(Json(dao::query_component_infos(&*conn, query.0)?))
+}
+
+#[get("/subsystem_info/<subinfoid>/component_infos?<query..>")]
+pub fn query_component_info_by_subsystem_info(conn: MysqlConn, subinfoid: i32, query: Form<ComponentInfoQuery>) -> Result<(Vec<ComponentInfo>, i64)> {
+    Ok(Json(dao::query_component_infos_by_subsystem_info(&*conn, subinfoid, query.0)?))
 }
 
 #[post("/component", format="application/json", data="<com>")]

@@ -1,97 +1,99 @@
-use rocket::http::Header;
-use rocket::http::Status;
-use rocket::request::Request;
-use rocket::response;
-use rocket::response::{Responder, Response};
-use rocket_contrib::json::Json;
-use std::fmt;
-use std::io::Cursor;
-use std::convert::From;
-use diesel::result::{ QueryResult, Error };
 use super::model::*;
 use super::schema::*;
+use diesel::result::{ QueryResult };
 use diesel::{ RunQueryDsl, ExpressionMethods, QueryDsl, TextExpressionMethods, BelongingToDsl, GroupedBy };
 use diesel::mysql::MysqlConnection;
+use diesel::Connection;
 
-#[derive(PartialEq, Debug)]
-pub struct DaoError {
-    detail: String,
-}
-
-impl DaoError {
-    pub fn new(detail: &str) -> Self {
-        DaoError {
-            detail: detail.to_owned(),
-        }
-    }
-}
-
-impl fmt::Display for DaoError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "DaoError: {}", self.detail)
-    }
-}
-
-impl From<Error> for DaoError {
-    fn from(e: Error) -> Self {
-        Self::new(&format!("{}", e))
+#[cfg(test)]
+mod tests {
+    use super::super::diesel;
+    use super::*;
+    #[test]
+    fn test_insert_device_info() {
+        let conn = diesel::MysqlConnection::establish("mysql://wangjun:Wt20110523@localhost/devicemanage").unwrap();
+        insert_device_info(&conn, DeviceInfoInsert{
+            name: "test name".into(),
+            model: "test model".into(),
+            maintain_interval: Some(30),
+        }).unwrap();
     }
 }
 
 
-impl<'r> Responder<'r> for DaoError {
-    fn respond_to(self, _: &Request) -> response::Result<'r> {
-        Response::build()
-            .sized_body(Cursor::new(format!("数据库错误: {}", self.detail)))
-            .status(Status::InternalServerError)
-            .header(Header::new("Content-Type", "text/plain;charset=utf-8"))
-            .ok()
-    }
-}
-
-pub type Result<T> = std::result::Result<Json<T>, DaoError>;
 
 // ==============================================device_info=========================================================
 
-pub fn insert_device_info(conn: &MysqlConnection, info: DeviceInfoInsert) -> diesel::result::QueryResult<usize> {
+pub fn insert_device_info(conn: &MysqlConnection, info: DeviceInfoInsert) -> QueryResult<usize> {
     Ok(diesel::insert_into(device_info::table).values(info).execute(conn)?)
 }
 
-pub fn bulk_insert_device_info(conn: &MysqlConnection, infos: &Vec<DeviceInfoInsert>) -> diesel::result::QueryResult<usize> {
+pub fn bulk_insert_device_info(conn: &MysqlConnection, infos: &Vec<DeviceInfoInsert>) -> QueryResult<usize> {
     Ok(diesel::insert_into(device_info::table).values(infos).execute(conn)?)
 }
 
-pub fn delete_device_info(conn: &MysqlConnection, id: i32) -> diesel::result::QueryResult<usize> {
+pub fn delete_device_info(conn: &MysqlConnection, id: i32) -> QueryResult<usize> {
     Ok(diesel::delete(device_info::table.find(id)).execute(conn)?)
 }
 
-pub fn update_device_info(conn: &MysqlConnection, id: i32, upd: DeviceInfoUpdate) -> diesel::result::QueryResult<usize> {
+pub fn update_device_info(conn: &MysqlConnection, id: i32, upd: DeviceInfoUpdate) -> QueryResult<usize> {
     Ok(diesel::update(device_info::table).filter(device_info::id.eq(id)).set(upd).execute(conn)?)
 }
 
-pub fn get_device_info(conn: &MysqlConnection, id: i32) -> diesel::result::QueryResult<DeviceInfo> {
+pub fn get_device_info(conn: &MysqlConnection, id: i32) -> QueryResult<DeviceInfo> {
     Ok(device_info::table.find(id).first(conn)?)
 }
 
-pub fn query_device_infos(conn: &MysqlConnection, query: DeviceInfoQuery) -> QueryResult<Vec<DeviceInfo>> {
-    let mut q = device_info::table.into_boxed();
+pub fn query_device_infos(conn: &MysqlConnection, query: DeviceInfoQuery) -> QueryResult<(Vec<DeviceInfo>, i64)> {
+    let mut q = device_info::table.limit(query.size).offset((query.page-1)*query.size).into_boxed();
+    let mut cq = device_info::table.count().into_boxed();
     if let Some(v) = query.name {
         q = q.filter(device_info::name.like(format!("%{}%", v)));
+        cq = cq.filter(device_info::name.like(format!("%{}%", v)));
     }
     if let Some(v) = query.model {
         q = q.filter(device_info::model.like(format!("%{}%", v)));
+        cq = cq.filter(device_info::model.like(format!("%{}%", v)));
     }
     if let Some(v) = query.maintain_interval_begin {
         q = q.filter(device_info::maintain_interval.ge(v));
+        cq = cq.filter(device_info::maintain_interval.ge(v));
     }
     if let Some(v) = query.maintain_interval_end {
         q = q.filter(device_info::maintain_interval.lt(v));
+        cq = cq.filter(device_info::maintain_interval.lt(v));
     }
-    q = q.limit(query.size).offset((query.page-1)*query.size);
-    Ok(q.load(conn)?)
+    conn.transaction(|| {
+        Ok((q.load(conn)?, cq.first(conn)?))
+    })
 }
 
-pub fn count_device_info(conn: &MysqlConnection, query: DeviceInfoQuery) -> QueryResult<usize> {
+pub fn query_device_infos_by_subsystem_info(conn: &MysqlConnection, subinfoid: i32, query: DeviceInfoQuery) -> QueryResult<(Vec<DeviceInfo>, i64)> {
+    let t = device_info::table.inner_join(deviceinfo_subsysteminfo::table.inner_join(subsystem_info::table)).filter(subsystem_info::id.eq(subinfoid));
+    let mut q = t.select(device_info::all_columns).limit(query.size).offset((query.page-1)*query.size).into_boxed();
+    let mut cq = t.count().into_boxed();
+    if let Some(v) = query.name {
+        q = q.filter(device_info::name.like(format!("%{}%", v)));
+        cq = cq.filter(device_info::name.like(format!("%{}%", v)));
+    }
+    if let Some(v) = query.model {
+        q = q.filter(device_info::model.like(format!("%{}%", v)));
+        cq = cq.filter(device_info::model.like(format!("%{}%", v)));
+    }
+    if let Some(v) = query.maintain_interval_begin {
+        q = q.filter(device_info::maintain_interval.ge(v));
+        cq = cq.filter(device_info::maintain_interval.ge(v));
+    }
+    if let Some(v) = query.maintain_interval_end {
+        q = q.filter(device_info::maintain_interval.lt(v));
+        cq = cq.filter(device_info::maintain_interval.lt(v));
+    }
+    conn.transaction(|| {
+        Ok((q.load(conn)?, cq.first(conn)?))
+    })
+}
+
+pub fn count_device_info(conn: &MysqlConnection, query: DeviceInfoQuery) -> QueryResult<i64> {
     let mut q = device_info::table.into_boxed();
     if let Some(v) = query.name {
         q = q.filter(device_info::name.like(format!("%{}%", v)));
@@ -105,28 +107,29 @@ pub fn count_device_info(conn: &MysqlConnection, query: DeviceInfoQuery) -> Quer
     if let Some(v) = query.maintain_interval_end {
         q = q.filter(device_info::maintain_interval.lt(v));
     }
-    Ok(q.count().execute(conn)?)
+    Ok(q.count().first(conn)?)
 }
+
 
 // ===================================================subsystem_info======================================================
 
-pub fn insert_subsystem_info(conn: &MysqlConnection, info: SubsystemInfoInsert) -> diesel::result::QueryResult<usize> {
+pub fn insert_subsystem_info(conn: &MysqlConnection, info: SubsystemInfoInsert) -> QueryResult<usize> {
     Ok(diesel::insert_into(subsystem_info::table).values(info).execute(conn)?)
 }
 
-pub fn bulk_insert_subsystem_info(conn: &MysqlConnection, infos: &Vec<SubsystemInfoInsert>) -> diesel::result::QueryResult<usize> {
+pub fn bulk_insert_subsystem_info(conn: &MysqlConnection, infos: &Vec<SubsystemInfoInsert>) -> QueryResult<usize> {
     Ok(diesel::insert_into(subsystem_info::table).values(infos).execute(conn)?)
 }
 
-pub fn delete_subsystem_info(conn: &MysqlConnection, id: i32) -> diesel::result::QueryResult<usize> {
+pub fn delete_subsystem_info(conn: &MysqlConnection, id: i32) -> QueryResult<usize> {
     Ok(diesel::delete(subsystem_info::table.find(id)).execute(conn)?)
 }
 
-pub fn update_subsystem_info(conn: &MysqlConnection, id: i32, upd: SubsystemInfoUpdate) -> diesel::result::QueryResult<usize> {
+pub fn update_subsystem_info(conn: &MysqlConnection, id: i32, upd: SubsystemInfoUpdate) -> QueryResult<usize> {
     Ok(diesel::update(subsystem_info::table.find(id)).set(upd).execute(conn)?)
 }
 
-pub fn get_subsystem_info(conn: &MysqlConnection, id: i32) -> diesel::result::QueryResult<(SubsystemInfo, Vec<DeviceInfo>, Vec<ComponentInfo>)> {
+pub fn get_subsystem_info(conn: &MysqlConnection, id: i32) -> QueryResult<(SubsystemInfo, Vec<DeviceInfo>, Vec<ComponentInfo>)> {
     let subinfo: SubsystemInfo = subsystem_info::table.find(id).first(conn)?;
     let devinfos: Vec<DeviceInfo> = DeviceinfoSubsysteminfo::belonging_to(&subinfo)
     .inner_join(device_info::table)
@@ -139,78 +142,106 @@ pub fn get_subsystem_info(conn: &MysqlConnection, id: i32) -> diesel::result::Qu
     Ok((subinfo, devinfos, cominfos))
 }
 
-pub fn query_subsystem_info(conn: &MysqlConnection, query: SubsystemInfoQuery) -> diesel::result::QueryResult<Vec<(SubsystemInfo, Vec<DeviceInfo>, Vec<ComponentInfo>)>> {
-    let mut sq = subsystem_info::table.limit(query.size).offset((query.size-1)*query.size).into_boxed();
+pub fn query_subsystem_infos(conn: &MysqlConnection, query: SubsystemInfoQuery) -> QueryResult<(Vec<SubsystemInfo>, i64)> {
+    let mut q = subsystem_info::table.limit(query.size).offset((query.size-1)*query.size).into_boxed();
+    let mut cq = subsystem_info::table.count().into_boxed();
     if let Some(v) = query.name {
-        sq = sq.filter(subsystem_info::name.like(format!("%{}%", v)));
+        q = q.filter(subsystem_info::name.like(format!("%{}%", v)));
+        cq = cq.filter(subsystem_info::name.like(format!("%{}%", v)));
     }
     if let Some(v) = query.maintain_interval_begin {
-        sq = sq.filter(subsystem_info::maintain_interval.ge(v));
+        q = q.filter(subsystem_info::maintain_interval.ge(v));
+        cq = cq.filter(subsystem_info::maintain_interval.ge(v));
     }
     if let Some(v) = query.maintain_interval_end {
-        sq = sq.filter(subsystem_info::maintain_interval.lt(v));
+        q = q.filter(subsystem_info::maintain_interval.lt(v));
+        cq = cq.filter(subsystem_info::maintain_interval.lt(v));
     }
-    let subinfos: Vec<SubsystemInfo> = sq.load(conn)?;
-    let mut dq = DeviceinfoSubsysteminfo::belonging_to(&subinfos).inner_join(device_info::table).into_boxed();
-    if let Some(v) = query.device_info_name {
-        dq = dq.filter(device_info::name.like(format!("%{}%", v)));
+    conn.transaction(|| {
+        Ok((q.load(conn)?, cq.first(conn)?))
+    })
+}
+
+pub fn query_subsystem_infos_by_device_info(conn: &MysqlConnection, devinfoid: i32, query: SubsystemInfoQuery) -> QueryResult<(Vec<SubsystemInfo>, i64)> {
+    let t = device_info::table.inner_join(deviceinfo_subsysteminfo::table.inner_join(subsystem_info::table)).filter(device_info::id.eq(devinfoid));
+    let mut q = t.select(subsystem_info::all_columns)
+    .limit(query.page)
+    .offset((query.page-1)*query.size)
+    .into_boxed();
+    let mut cq = t.count().into_boxed();
+    if let Some(v) = query.name {
+        q = q.filter(subsystem_info::name.like(format!("%{}%", v)));
+        cq = cq.filter(subsystem_info::name.like(format!("%{}%", v)));
     }
-    if let Some(v) = query.device_info_model {
-        dq = dq.filter(device_info::model.like(format!("%{}%", v)));
+    if let Some(v) = query.maintain_interval_begin {
+        q = q.filter(subsystem_info::maintain_interval.ge(v));
+        cq = cq.filter(subsystem_info::maintain_interval.ge(v));
     }
-    if let Some(v) = query.device_info_maintain_interval_begin {
-        dq = dq.filter(device_info::maintain_interval.ge(v));
+    if let Some(v) = query.maintain_interval_end {
+        q = q.filter(subsystem_info::maintain_interval.lt(v));
+        cq = cq.filter(subsystem_info::maintain_interval.lt(v));
     }
-    if let Some(v) = query.device_info_maintain_interval_end {
-        dq = dq.filter(device_info::maintain_interval.lt(v));
+    conn.transaction(|| {
+        Ok((q.load(conn)?, cq.first(conn)?))
+    })
+}
+
+pub fn query_subsystem_infos_by_component_info(conn: &MysqlConnection, comid: i32, query: SubsystemInfoQuery) -> QueryResult<(Vec<SubsystemInfo>, i64)> {
+    let t = subsystem_info::table.inner_join(subsysteminfo_componentinfo::table.inner_join(component_info::table)).filter(component_info::id.eq(comid));
+    let mut q = t.select(subsystem_info::all_columns).limit(query.size).offset((query.page-1)*query.size).into_boxed();
+    let mut cq = t.count().into_boxed();
+    if let Some(v) = query.name {
+        q = q.filter(subsystem_info::name.like(format!("%{}%", v)));
+        cq = cq.filter(subsystem_info::name.like(format!("%{}%", v)));
     }
-    let rel_devinfos: Vec<Vec<DeviceInfo>> = dq.load::<(DeviceinfoSubsysteminfo, DeviceInfo)>(conn)?
-    .grouped_by(&subinfos)
-    .into_iter()
-    .map(|t| t.into_iter().map(|tt: (DeviceinfoSubsysteminfo, DeviceInfo)| tt.1).collect())
-    .collect();
-    let mut cq = SubsysteminfoComponentinfo::belonging_to(&subinfos).inner_join(component_info::table).into_boxed();
-    if let Some(v) = query.component_info_name {
-        cq = cq.filter(component_info::name.like(format!("%{}%", v)));
+    if let Some(v) = query.maintain_interval_begin {
+        q = q.filter(subsystem_info::maintain_interval.ge(v));
+        cq = cq.filter(subsystem_info::maintain_interval.ge(v));
     }
-    if let Some(v) = query.component_info_model {
-        cq = cq.filter(component_info::model.like(format!("%{}%", v)));
+    if let Some(v) = query.maintain_interval_end {
+        q = q.filter(subsystem_info::maintain_interval.lt(v));
+        cq = cq.filter(subsystem_info::maintain_interval.lt(v));
     }
-    if let Some(v) = query.component_info_maintain_interval_begin {
-        cq = cq.filter(component_info::maintain_interval.ge(v));
+    conn.transaction(|| {
+        Ok((q.load(conn)?, cq.first(conn)?))
+    })
+}
+
+
+
+pub fn count_subsystem_info(conn: &MysqlConnection, query: SubsystemInfoQuery) -> QueryResult<i64> {
+    let mut q = subsystem_info::table.count().into_boxed();
+    if let Some(v) = query.name {
+        q = q.filter(subsystem_info::name.like(format!("%{}%", v)));
     }
-    if let Some(v) = query.component_info_maintain_interval_end {
-        cq = cq.filter(component_info::maintain_interval.lt(v));
+    if let Some(v) = query.maintain_interval_begin {
+        q = q.filter(subsystem_info::maintain_interval.ge(v));
     }
-    let rel_cominfos: Vec<Vec<ComponentInfo>> = cq.load(conn)?
-    .grouped_by(&subinfos)
-    .into_iter()
-    .map(|t| t.into_iter()
-        .map(|tt: (SubsysteminfoComponentinfo, ComponentInfo)| tt.1)
-        .collect())
-    .collect();
-    Ok(subinfos.into_iter().zip(rel_devinfos).zip(rel_cominfos).map(|t| ((t.0).0, (t.0).1, t.1)).collect())
+    if let Some(v) = query.maintain_interval_end {
+        q = q.filter(subsystem_info::maintain_interval.lt(v));
+    }
+    Ok(q.first(conn)?)
 }
 
 // =======================================================component_info===================================================
 
-pub fn insert_component_info(conn: &MysqlConnection, info: ComponentInfoInsert) -> diesel::result::QueryResult<usize> {
+pub fn insert_component_info(conn: &MysqlConnection, info: ComponentInfoInsert) -> QueryResult<usize> {
     Ok(diesel::insert_into(component_info::table).values(info).execute(conn)?)
 }
 
-pub fn bulk_insert_component_info(conn: &MysqlConnection, infos: &Vec<ComponentInfoInsert>) -> diesel::result::QueryResult<usize> {
+pub fn bulk_insert_component_info(conn: &MysqlConnection, infos: &Vec<ComponentInfoInsert>) -> QueryResult<usize> {
     Ok(diesel::insert_into(component_info::table).values(infos).execute(conn)?)
 }
 
-pub fn delete_component_info(conn: &MysqlConnection, id: i32) -> diesel::result::QueryResult<usize> {
+pub fn delete_component_info(conn: &MysqlConnection, id: i32) -> QueryResult<usize> {
     Ok(diesel::delete(component_info::table.find(id)).execute(conn)?)
 }
 
-pub fn update_component_info(conn: &MysqlConnection, id: i32, upd: ComponentInfoUpdate) -> diesel::result::QueryResult<usize> {
+pub fn update_component_info(conn: &MysqlConnection, id: i32, upd: ComponentInfoUpdate) -> QueryResult<usize> {
     Ok(diesel::update(component_info::table.find(id)).set(upd).execute(conn)?)
 }
 
-pub fn get_component_info(conn: &MysqlConnection, id: i32) -> diesel::result::QueryResult<(DeviceInfo, SubsystemInfo, ComponentInfo)> {
+pub fn get_component_info(conn: &MysqlConnection, id: i32) -> QueryResult<(DeviceInfo, SubsystemInfo, ComponentInfo)> {
     Ok(
         device_info::table.inner_join(
             deviceinfo_subsysteminfo::table.inner_join(
@@ -221,39 +252,58 @@ pub fn get_component_info(conn: &MysqlConnection, id: i32) -> diesel::result::Qu
                         .select((device_info::all_columns, subsystem_info::all_columns, component_info::all_columns)).first(conn)?)
 }
 
-pub fn query_component_info(conn: &MysqlConnection, query: ComponentInfoQuery) -> diesel::result::QueryResult<Vec<(DeviceInfo, SubsystemInfo, ComponentInfo)>> {
-        let mut q = device_info::table.inner_join(
-            deviceinfo_subsysteminfo::table.inner_join(
-                subsystem_info::table.inner_join(
-                    subsysteminfo_componentinfo::table.inner_join(
-                        component_info::table
-                    )
-                )
-            )
-        )
-        .select((device_info::all_columns, subsystem_info::all_columns, component_info::all_columns))
-        .into_boxed();
-        if let Some(v) = query.device_info_name {
-            q = q.filter(device_info::name.like(format!("%{}%", v)));
-        }
-        if let Some(v) = query.device_info_model {
-            q = q.filter(device_info::model.like(format!("%{}%", v)));   
-        }
-        if let Some(v) = query.device_info_maintain_interval_begin {
-            q = q.filter(device_info::maintain_interval.ge(v));
-        }
-        if let Some(v) = query.device_info_maintain_interval_end {
-            q = q.filter(device_info::maintain_interval.lt(v));
-        }
-        if let Some(v) = query.subsystem_info_name {
-            q = q.filter(subsystem_info::name.like(format!("%{}%", v)));
-        }
-        if let Some(v) = query.subsystem_info_maintain_interval_begin {
-            q = q.filter(subsystem_info::maintain_interval.ge(v));
-        }
-        if let Some(v) = query.subsystem_info_maintain_interval_end {
-            q = q.filter(subsystem_info::maintain_interval.lt(v));
-        }
+pub fn query_component_infos(conn: &MysqlConnection, query: ComponentInfoQuery) -> QueryResult<(Vec<ComponentInfo>, i64)> {
+    let mut q = component_info::table.limit(query.size).offset((query.page-1)*query.size).into_boxed();
+    let mut cq = component_info::table.count().into_boxed();
+    if let Some(v) = query.name {
+        q = q.filter(component_info::name.like(format!("%{}%", v)));
+        cq = cq.filter(component_info::name.like(format!("%{}%", v)));
+    }
+    if let Some(v) = query.model {
+        q = q.filter(component_info::model.like(format!("%{}%", v)));
+        cq = cq.filter(component_info::model.like(format!("%{}%", v)));
+    }
+    if let Some(v) = query.maintain_interval_begin {
+        q = q.filter(component_info::maintain_interval.ge(v));
+        cq = cq.filter(component_info::maintain_interval.ge(v));
+    }
+    if let Some(v) = query.maintain_interval_end {
+        q = q.filter(component_info::maintain_interval.lt(v));
+        cq = cq.filter(component_info::maintain_interval.lt(v));
+    }
+    conn.transaction(|| {
+        Ok((q.load(conn)?, cq.first(conn)?))
+    })
+}
+
+pub fn query_component_infos_by_subsystem_info(conn: &MysqlConnection, subinfoid: i32, query: ComponentInfoQuery) -> QueryResult<(Vec<ComponentInfo>, i64)> {
+    let t = component_info::table.inner_join(subsysteminfo_componentinfo::table.inner_join(subsystem_info::table)).filter(subsystem_info::id.eq(subinfoid));
+    let mut q = t.select(component_info::all_columns).limit(query.size).offset((query.page-1)*query.size).into_boxed();
+    let mut cq = t.count().into_boxed();
+    if let Some(v) = query.name {
+        q = q.filter(component_info::name.like(format!("%{}%", v)));
+        cq = cq.filter(component_info::name.like(format!("%{}%", v)));
+    }
+    if let Some(v) = query.model {
+        q = q.filter(component_info::model.like(format!("%{}%", v)));
+        cq = cq.filter(component_info::model.like(format!("%{}%", v)));
+    }
+    if let Some(v) = query.maintain_interval_begin {
+        q = q.filter(component_info::maintain_interval.ge(v));
+        cq = cq.filter(component_info::maintain_interval.ge(v));
+    }
+    if let Some(v) = query.maintain_interval_end {
+        q = q.filter(component_info::maintain_interval.lt(v));
+        cq = cq.filter(component_info::maintain_interval.lt(v));
+    }
+    conn.transaction(|| {
+        Ok((q.load(conn)?, cq.first(conn)?))
+    })
+}
+
+
+pub fn count_component_info(conn: &MysqlConnection, query: ComponentInfoQuery) -> QueryResult<i64> {
+        let mut q = component_info::table.count().into_boxed();
         if let Some(v) = query.name {
             q = q.filter(component_info::name.like(format!("%{}%", v)));
         }
@@ -266,31 +316,28 @@ pub fn query_component_info(conn: &MysqlConnection, query: ComponentInfoQuery) -
         if let Some(v) = query.maintain_interval_end {
             q = q.filter(component_info::maintain_interval.lt(v));
         }
-        if let (Some(p), Some(s)) = (query.page, query.size) {
-            q = q.limit(s).offset((p-1)*s)
-        }
-        Ok(q.load(conn)?)
+        Ok(q.first(conn)?)
 }
 
 // =======================================================device====================================================
 
-pub fn insert_device(conn: &MysqlConnection, dev: DeviceInsert) -> diesel::result::QueryResult<usize> {
+pub fn insert_device(conn: &MysqlConnection, dev: DeviceInsert) -> QueryResult<usize> {
     Ok(diesel::insert_into(device::table).values(dev).execute(conn)?)
 }
 
-pub fn bulk_insert_device(conn: &MysqlConnection, devs: &Vec<DeviceInsert>) -> diesel::result::QueryResult<usize> {
+pub fn bulk_insert_device(conn: &MysqlConnection, devs: &Vec<DeviceInsert>) -> QueryResult<usize> {
     Ok(diesel::insert_into(device::table).values(devs).execute(conn)?)
 }
 
-pub fn delete_device(conn: &MysqlConnection, id: i32) -> diesel::result::QueryResult<usize> {
+pub fn delete_device(conn: &MysqlConnection, id: i32) -> QueryResult<usize> {
     Ok(diesel::delete(device::table.find(id)).execute(conn)?)
 }
 
-pub fn update_device(conn: &MysqlConnection, id: i32, upd: DeviceUpdate) -> diesel::result::QueryResult<usize> {
+pub fn update_device(conn: &MysqlConnection, id: i32, upd: DeviceUpdate) -> QueryResult<usize> {
     Ok(diesel::update(device::table.find(id)).set(upd).execute(conn)?)
 }
 
-pub fn get_device(conn: &MysqlConnection, id: i32) -> diesel::result::QueryResult<(Device, Vec<(Subsystem, Vec<Component>)>)> {
+pub fn get_device(conn: &MysqlConnection, id: i32) -> QueryResult<(Device, Vec<(Subsystem, Vec<Component>)>)> {
     let dev: Device = device::table.find(id).first(conn)?;
     let subs: Vec<Subsystem> = Subsystem::belonging_to(&dev).load(conn)?;
     let coms: Vec<Component> = Component::belonging_to(&subs).load(conn)?;
@@ -299,7 +346,7 @@ pub fn get_device(conn: &MysqlConnection, id: i32) -> diesel::result::QueryResul
     Ok((dev, grouped_subs_coms))
 }
 
-pub fn query_device(conn: &MysqlConnection, query: DeviceQuery) -> diesel::result::QueryResult<Vec<(Device, Vec<(Subsystem, Vec<Component>)>)>> {
+pub fn query_device(conn: &MysqlConnection, query: DeviceQuery) -> QueryResult<Vec<(Device, Vec<(Subsystem, Vec<Component>)>)>> {
     let mut q = device::table.into_boxed();
     if let Some(v) = query.name {
         q = q.filter(device::name.like(format!("%{}%", v)));
@@ -354,29 +401,29 @@ pub fn query_device(conn: &MysqlConnection, query: DeviceQuery) -> diesel::resul
 
 
 
-pub fn insert_subsystem(conn: &MysqlConnection, sub: SubsystemInsert) -> diesel::result::QueryResult<usize> {
+pub fn insert_subsystem(conn: &MysqlConnection, sub: SubsystemInsert) -> QueryResult<usize> {
     Ok(diesel::insert_into(subsystem::table).values(sub).execute(conn)?)
 }
 
-pub fn bulk_insert_subsystem(conn: &MysqlConnection, subs: &Vec<SubsystemInsert>) -> diesel::result::QueryResult<usize> {
+pub fn bulk_insert_subsystem(conn: &MysqlConnection, subs: &Vec<SubsystemInsert>) -> QueryResult<usize> {
     Ok(diesel::insert_into(subsystem::table).values(subs).execute(conn)?)
 }
 
-pub fn delete_subsystem(conn: &MysqlConnection, id: i32) -> diesel::result::QueryResult<usize> {
+pub fn delete_subsystem(conn: &MysqlConnection, id: i32) -> QueryResult<usize> {
     Ok(diesel::delete(subsystem::table.find(id)).execute(conn)?)
 }
 
-pub fn udpate_subsystem(conn: &MysqlConnection, id: i32, upd: SubsystemUpdate) -> diesel::result::QueryResult<usize> {
+pub fn udpate_subsystem(conn: &MysqlConnection, id: i32, upd: SubsystemUpdate) -> QueryResult<usize> {
     Ok(diesel::update(subsystem::table.find(id)).set(upd).execute(conn)?)
 }
 
-pub fn get_subsystem(conn: &MysqlConnection, id: i32) -> diesel::result::QueryResult<(Device, Subsystem, Vec<Component>)> {
+pub fn get_subsystem(conn: &MysqlConnection, id: i32) -> QueryResult<(Device, Subsystem, Vec<Component>)> {
     let dev_sub: (Device, Subsystem) = device::table.inner_join(subsystem::table).filter(subsystem::id.eq(id)).first(conn)?;
     let coms: Vec<Component> = Component::belonging_to(&dev_sub.1).load(conn)?;
     Ok((dev_sub.0, dev_sub.1, coms))
 }
 
-pub fn query_subsystem(conn: &MysqlConnection, query: SubsystemQuery) -> diesel::result::QueryResult<Vec<(Device, Subsystem, Vec<Component>)>> {
+pub fn query_subsystem(conn: &MysqlConnection, query: SubsystemQuery) -> QueryResult<Vec<(Device, Subsystem, Vec<Component>)>> {
     let mut q = device::table.inner_join(subsystem::table).into_boxed();
     if let Some(v) = query.device_name {
         q = q.filter(device::name.like(format!("%{}%", v)));
@@ -428,28 +475,28 @@ pub fn query_subsystem(conn: &MysqlConnection, query: SubsystemQuery) -> diesel:
 
 // =================================================component=========================================================
 
-pub fn insert_component(conn: &MysqlConnection, com: ComponentInsert) -> diesel::result::QueryResult<usize> {
+pub fn insert_component(conn: &MysqlConnection, com: ComponentInsert) -> QueryResult<usize> {
     Ok(diesel::insert_into(component::table).values(com).execute(conn)?)
 }
 
-pub fn bulk_insert_component(conn: &MysqlConnection, coms: &Vec<ComponentInsert>) -> diesel::result::QueryResult<usize> {
+pub fn bulk_insert_component(conn: &MysqlConnection, coms: &Vec<ComponentInsert>) -> QueryResult<usize> {
     Ok(diesel::insert_into(component::table).values(coms).execute(conn)?)
 }
 
-pub fn delete_component(conn: &MysqlConnection, id: i32) -> diesel::result::QueryResult<usize> {
+pub fn delete_component(conn: &MysqlConnection, id: i32) -> QueryResult<usize> {
     Ok(diesel::delete(component::table.find(id)).execute(conn)?)
 }
 
-pub fn update_component(conn: &MysqlConnection, id: i32, upd: ComponentUpdate) -> diesel::result::QueryResult<usize> {
+pub fn update_component(conn: &MysqlConnection, id: i32, upd: ComponentUpdate) -> QueryResult<usize> {
     Ok(diesel::update(component::table.find(id)).set(upd).execute(conn)?)
 }
 
-pub fn get_component(conn: &MysqlConnection, id: i32) -> diesel::result::QueryResult<(Device, Subsystem, Component)> {
+pub fn get_component(conn: &MysqlConnection, id: i32) -> QueryResult<(Device, Subsystem, Component)> {
     let g: (Device, (Subsystem, Component)) = device::table.inner_join(subsystem::table.inner_join(component::table)).filter(component::id.eq(id)).first(conn)?;
     Ok((g.0, (g.1).0, (g.1).1))
 }
 
-pub fn query_component(conn: &MysqlConnection, query: ComponentQuery) -> diesel::result::QueryResult<Vec<(Device, Subsystem, Component)>> {
+pub fn query_component(conn: &MysqlConnection, query: ComponentQuery) -> QueryResult<Vec<(Device, Subsystem, Component)>> {
     let mut q = device::table.inner_join(subsystem::table.inner_join(component::table)).into_boxed();
     if let Some(v) = query.device_name {
         q = q.filter(device::name.like(format!("%{}%", v)))
@@ -489,4 +536,15 @@ pub fn query_component(conn: &MysqlConnection, query: ComponentQuery) -> diesel:
     }
     let g: Vec<(Device, (Subsystem, Component))> = q.load(conn)?;
     Ok(g.into_iter().map(|t| (t.0, (t.1).0, (t.1).1)).collect())
+}
+
+
+// ==============================================================relations================================================
+
+pub fn insert_deviceinfo_subsysteminfo(conn: &MysqlConnection, rel: DeviceinfoSubsysteminfo) -> QueryResult<usize> {
+    Ok(diesel::insert_into(deviceinfo_subsysteminfo::table).values(rel).execute(conn)?)
+}
+
+pub fn insert_subsysteminfo_componentinfo(conn: &MysqlConnection, rel: SubsysteminfoComponentinfo) -> QueryResult<usize> {
+    Ok(diesel::insert_into(subsysteminfo_componentinfo::table).values(rel).execute(conn)?)
 }
