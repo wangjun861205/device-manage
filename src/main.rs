@@ -5,6 +5,7 @@ pub mod handler;
 pub mod model;
 pub mod schema;
 pub mod result;
+pub mod service;
 
 extern crate chrono;
 #[macro_use]
