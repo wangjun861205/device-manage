@@ -20,6 +20,7 @@ pub fn add_subsystem_info_to_device_info(
     )?)
 }
 
+
 pub fn add_component_info_to_subsystem_info(
     conn: &MysqlConnection,
     devinfo_id: i32,
