@@ -3,6 +3,7 @@ use super::model::*;
 use diesel::mysql::MysqlConnection;
 use diesel::result::Error;
 
+
 pub fn add_subsystem_info_to_device_info(
     conn: &MysqlConnection,
     devinfo_id: i32,
@@ -21,6 +22,7 @@ pub fn add_subsystem_info_to_device_info(
 
 pub fn add_component_info_to_subsystem_info(
     conn: &MysqlConnection,
+    devinfo_id: i32,
     subinfo_id: i32,
     cominfo_id: i32,
     quantity: i32,
@@ -30,9 +32,11 @@ pub fn add_component_info_to_subsystem_info(
     Ok(insert_subsysteminfo_componentinfo(
         conn,
         SubinfoCominfoInsert {
+            device_info_id: devinfo_id,
             subsystem_info_id: subinfo_id,
             component_info_id: cominfo_id,
             quantity: quantity,
         },
     )?)
 }
+

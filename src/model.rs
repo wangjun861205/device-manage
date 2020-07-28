@@ -358,6 +358,7 @@ pub struct DevinfoSubinfoInsert {
 #[belongs_to(ComponentInfo)]
 pub struct SubsysteminfoComponentinfo {
     pub id: i32,
+    pub device_info_id: i32,
     pub subsystem_info_id: i32,
     pub component_info_id: i32,
     pub quantity: i32,
@@ -366,7 +367,9 @@ pub struct SubsysteminfoComponentinfo {
 #[derive(Debug, Insertable)]
 #[table_name = "subsysteminfo_componentinfo"]
 pub struct SubinfoCominfoInsert {
+    pub device_info_id: i32,
     pub subsystem_info_id: i32,
     pub component_info_id: i32,
     pub quantity: i32,
 }
+

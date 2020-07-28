@@ -86,11 +86,13 @@ CREATE TABLE IF NOT EXISTS `deviceinfo_subsysteminfo` (
 
 CREATE TABLE IF NOT EXISTS `subsysteminfo_componentinfo` (
     id int not null auto_increment comment 'id',
+    device_info_id int not null comment '设备信息id',
     subsystem_info_id int not null comment '子系统信息id',
     component_info_id int not null comment '零部件信息id',
     quantity int not null default 1 comment '数量',
     primary key (id),
-    unique key `uni_subsysteminfoid_componentinfoid` (subsystem_info_id, component_info_id),
+    unique key `uni_devinfo_subinfo_cominf` (device_info_id, subsystem_info_id, component_info_id),
+    foreign key `fk_deviceinfo2` (device_info_id) references `device_info` (id) on delete cascade,
     foreign key `fk_subsysteminfo2` (subsystem_info_id) references `subsystem_info` (id) on delete cascade,
     foreign key `fk_componentinfo2` (component_info_id) references `component_info` (id) on delete cascade
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT '子系统信息与零部件信息多对多关系';
