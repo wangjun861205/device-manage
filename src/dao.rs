@@ -4,7 +4,8 @@ use diesel::mysql::MysqlConnection;
 use diesel::result::QueryResult;
 use diesel::Connection;
 use diesel::{
-    BelongingToDsl, ExpressionMethods, GroupedBy, QueryDsl, RunQueryDsl, TextExpressionMethods, BoolExpressionMethods
+    BelongingToDsl, BoolExpressionMethods, ExpressionMethods, GroupedBy, QueryDsl, RunQueryDsl,
+    TextExpressionMethods,
 };
 
 #[cfg(test)]
@@ -820,10 +821,27 @@ pub fn insert_deviceinfo_subsysteminfo(
         .execute(conn)?)
 }
 
-pub fn delete_deviceinfo_subsysteminfo(conn: &MysqlConnection, devinfo_id: i32, subinfo_id: i32) -> QueryResult<usize> {
+pub fn delete_deviceinfo_subsysteminfo(
+    conn: &MysqlConnection,
+    devinfo_id: i32,
+    subinfo_id: i32,
+) -> QueryResult<usize> {
     Ok(diesel::delete(deviceinfo_subsysteminfo::table)
-    .filter(deviceinfo_subsysteminfo::device_info_id.eq(devinfo_id).and(deviceinfo_subsysteminfo::subsystem_info_id.eq(subinfo_id)))
-    .execute(conn)?)
+        .filter(
+            deviceinfo_subsysteminfo::device_info_id
+                .eq(devinfo_id)
+                .and(deviceinfo_subsysteminfo::subsystem_info_id.eq(subinfo_id)),
+        )
+        .execute(conn)?)
+}
+
+pub fn bulk_delete_deviceinfo_subsysteminfo(
+    conn: &MysqlConnection,
+    devinfo_id: i32,
+) -> QueryResult<usize> {
+    Ok(diesel::delete(deviceinfo_subsysteminfo::table)
+        .filter(deviceinfo_subsysteminfo::device_info_id.eq(devinfo_id))
+        .execute(conn)?)
 }
 
 pub fn insert_subsysteminfo_componentinfo(
@@ -835,17 +853,32 @@ pub fn insert_subsysteminfo_componentinfo(
         .execute(conn)?)
 }
 
-pub fn delete_subsysteminfo_componentinfo(conn: &MysqlConnection, devinfo_id: i32, subinfo_id: i32, cominfo_id: i32) -> QueryResult<usize> {
+pub fn delete_subsysteminfo_componentinfo(
+    conn: &MysqlConnection,
+    devinfo_id: i32,
+    subinfo_id: i32,
+    cominfo_id: i32,
+) -> QueryResult<usize> {
     Ok(diesel::delete(subsysteminfo_componentinfo::table)
-    .filter(subsysteminfo_componentinfo::device_info_id.eq(devinfo_id)
-        .and(subsysteminfo_componentinfo::subsystem_info_id.eq(subinfo_id))
-        .and(subsysteminfo_componentinfo::component_info_id.eq(cominfo_id)))
-    .execute(conn)?)
+        .filter(
+            subsysteminfo_componentinfo::device_info_id
+                .eq(devinfo_id)
+                .and(subsysteminfo_componentinfo::subsystem_info_id.eq(subinfo_id))
+                .and(subsysteminfo_componentinfo::component_info_id.eq(cominfo_id)),
+        )
+        .execute(conn)?)
 }
 
-pub fn bulk_delete_subsysteminfo_componentinfo(conn: &MysqlConnection, devinfo_id: i32, subinfo_id: i32) -> QueryResult<usize> {
+pub fn bulk_delete_subsysteminfo_componentinfo(
+    conn: &MysqlConnection,
+    devinfo_id: i32,
+    subinfo_id: i32,
+) -> QueryResult<usize> {
     Ok(diesel::delete(subsysteminfo_componentinfo::table)
-    .filter(subsysteminfo_componentinfo::device_info_id.eq(devinfo_id)
-        .and(subsysteminfo_componentinfo::subsystem_info_id.eq(subinfo_id)))
-    .execute(conn)?)
+        .filter(
+            subsysteminfo_componentinfo::device_info_id
+                .eq(devinfo_id)
+                .and(subsysteminfo_componentinfo::subsystem_info_id.eq(subinfo_id)),
+        )
+        .execute(conn)?)
 }
