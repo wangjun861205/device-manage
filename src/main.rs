@@ -6,6 +6,7 @@ pub mod model;
 pub mod schema;
 pub mod result;
 pub mod service;
+mod storer;
 
 extern crate chrono;
 #[macro_use]
@@ -13,6 +14,7 @@ extern crate diesel;
 extern crate dotenv;
 #[macro_use]
 extern crate rocket;
+extern crate r2d2;
 
 use diesel::mysql::MysqlConnection;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};

@@ -125,6 +125,35 @@ mod tests {
     }
 }
 
+// ==============================================trait===============================================================
+
+
+#[derive(Debug)]
+pub struct Error(pub String);
+
+use std::fmt::{ self, Display, Formatter };
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", &self)
+    }
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+// use super::storer::mysqlstorer::Result;
+pub trait DeviceInfoDao {
+    fn insert_device_info(&self, info: DeviceInfoInsert) -> Result<usize>;
+    fn bulk_insert_device_info(&self, infos: &Vec<DeviceInfoInsert>,) -> Result<usize>;
+    fn delete_device_info(&self, id: i32) -> Result<usize>;
+    fn delete_device_infos(&self, query: DeviceInfoQuery) -> Result<usize>;
+    fn update_device_info(&self, id: i32, upd: DeviceInfoUpdate) -> Result<usize>;
+    fn get_device_info(&self, id: i32) -> Result<DeviceInfo>;
+    fn query_device_infos(&self, query: DeviceInfoQuery) -> Result<(Vec<DeviceInfo>, i64)>;
+    fn query_device_infos_by_subsystem_info(&self, subinfoid: i32, query: DeviceInfoQuery) -> Result<(Vec<DeviceInfo>, i64)>;
+    fn count_device_info(&self, query: DeviceInfoQuery) -> Result<i64>;
+}
+
 // ==============================================device_info=========================================================
 
 pub fn insert_device_info(conn: &MysqlConnection, info: DeviceInfoInsert) -> QueryResult<usize> {
@@ -133,10 +162,7 @@ pub fn insert_device_info(conn: &MysqlConnection, info: DeviceInfoInsert) -> Que
         .execute(conn)?)
 }
 
-pub fn bulk_insert_device_info(
-    conn: &MysqlConnection,
-    infos: &Vec<DeviceInfoInsert>,
-) -> QueryResult<usize> {
+pub fn bulk_insert_device_info(conn: &MysqlConnection, infos: &Vec<DeviceInfoInsert>) -> QueryResult<usize> {
     Ok(diesel::insert_into(device_info::table)
         .values(infos)
         .execute(conn)?)
@@ -163,11 +189,7 @@ pub fn delete_device_infos(conn: &MysqlConnection, query: DeviceInfoQuery) -> Qu
     Ok(q.execute(conn)?)
 }
 
-pub fn update_device_info(
-    conn: &MysqlConnection,
-    id: i32,
-    upd: DeviceInfoUpdate,
-) -> QueryResult<usize> {
+pub fn update_device_info( conn: &MysqlConnection, id: i32, upd: DeviceInfoUpdate) -> QueryResult<usize> {
     Ok(diesel::update(device_info::table)
         .filter(device_info::id.eq(id))
         .set(upd)
@@ -206,11 +228,7 @@ pub fn query_device_infos(
     conn.transaction(|| Ok((q.load(conn)?, cq.first(conn)?)))
 }
 
-pub fn query_device_infos_by_subsystem_info(
-    conn: &MysqlConnection,
-    subinfoid: i32,
-    query: DeviceInfoQuery,
-) -> QueryResult<(Vec<DeviceInfo>, i64)> {
+pub fn query_device_infos_by_subsystem_info( conn: &MysqlConnection, subinfoid: i32, query: DeviceInfoQuery) -> QueryResult<(Vec<DeviceInfo>, i64)> {
     let t = device_info::table
         .inner_join(deviceinfo_subsysteminfo::table.inner_join(subsystem_info::table))
         .filter(subsystem_info::id.eq(subinfoid));

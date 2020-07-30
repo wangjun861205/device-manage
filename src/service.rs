@@ -85,10 +85,6 @@ pub fn add_component_info_to_subsystem_info(
     )?)
 }
 
-<<<<<<< HEAD
-
-
-=======
 pub fn remove_componentinfo_from_subsysteminfo(
     conn: &MysqlConnection,
     devinfo_id: i32,
@@ -100,7 +96,20 @@ pub fn remove_componentinfo_from_subsysteminfo(
     )?)
 }
 
+
+
 pub fn create_component_info(conn: &MysqlConnection, info: ComponentInfoInsert) -> Result<usize> {
     Ok(insert_component_info(conn, info)?)
 }
->>>>>>> 953e92add90ce37ba9539463e99bd565ebf2a7b2
+
+pub fn create_subsystem_info(conn: &MysqlConnection, info: SubsystemInfoInsert) -> Result<usize> {
+    Ok(insert_subsystem_info(conn, info)?)
+}
+
+pub fn create_device_info(conn: &MysqlConnection, info: DeviceInfoInsert) -> Result<usize> {
+    Ok(insert_device_info(conn, info)?)
+}
+
+
+
+

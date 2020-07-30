@@ -196,6 +196,7 @@ dependencies = [
  "chrono",
  "diesel",
  "dotenv",
+ "r2d2",
  "rocket",
  "rocket_contrib",
  "serde",
