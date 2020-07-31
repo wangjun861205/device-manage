@@ -53,6 +53,7 @@ impl From<diesel::result::Error> for dao::Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 
+
 //===========================================================device info===================================================
 
 
