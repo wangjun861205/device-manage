@@ -3,10 +3,8 @@ use super::schema::*;
 use diesel::mysql::MysqlConnection;
 use diesel::result::QueryResult;
 use diesel::Connection;
-use diesel::{
-    BelongingToDsl, BoolExpressionMethods, ExpressionMethods, GroupedBy, QueryDsl, RunQueryDsl,
-    TextExpressionMethods,
-};
+use diesel::{BelongingToDsl, BoolExpressionMethods, ExpressionMethods, GroupedBy, QueryDsl, RunQueryDsl, TextExpressionMethods};
+use std::error;
 
 #[derive(Debug)]
 pub struct Error(pub String);
@@ -18,6 +16,8 @@ impl Display for Error {
         write!(f, "{}", &self)
     }
 }
+
+impl error::Error for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -31,13 +31,10 @@ pub trait DeviceInfoStorer {
     fn update(&self, id: i32, upd: DeviceInfoUpdate) -> Result<usize>;
     fn get(&self, id: i32) -> Result<DeviceInfo>;
     fn query(&self, query: DeviceInfoQuery) -> Result<(Vec<DeviceInfo>, i64)>;
-    fn query_by_subsystem_info(
-        &self,
-        subinfoid: i32,
-        query: DeviceInfoQuery,
-    ) -> Result<(Vec<DeviceInfo>, i64)>;
+    fn query_by_subsystem_info(&self, subinfoid: i32, query: DeviceInfoQuery) -> Result<(Vec<DeviceInfo>, i64)>;
     fn count(&self, query: DeviceInfoQuery) -> Result<i64>;
     fn is_exist(&self, id: i32) -> Result<bool>;
+    fn detail(&self, id: i32) -> Result<(DeviceInfo, Vec<(SubsystemInfo, Vec<ComponentInfo>)>)>;
 }
 
 // ===================================================subsystem_info======================================================
@@ -51,16 +48,8 @@ pub trait SubsystemInfoStorer {
     fn update(&self, id: i32, upd: SubsystemInfoUpdate) -> Result<usize>;
     fn get(&self, id: i32) -> Result<SubsystemInfo>;
     fn query(&self, query: SubsystemInfoQuery) -> Result<(Vec<SubsystemInfo>, i64)>;
-    fn query_by_device_info(
-        &self,
-        devinfoid: i32,
-        query: SubsystemInfoQuery,
-    ) -> Result<(Vec<SubsystemInfo>, i64)>;
-    fn query_by_component_info(
-        &self,
-        comid: i32,
-        query: SubsystemInfoQuery,
-    ) -> Result<(Vec<SubsystemInfo>, i64)>;
+    fn query_by_device_info(&self, devinfoid: i32, query: SubsystemInfoQuery) -> Result<(Vec<SubsystemInfo>, i64)>;
+    fn query_by_component_info(&self, comid: i32, query: SubsystemInfoQuery) -> Result<(Vec<SubsystemInfo>, i64)>;
     fn count(&self, query: SubsystemInfoQuery) -> Result<i64>;
     fn is_exist(&self, id: i32) -> Result<bool>;
 }
@@ -80,11 +69,7 @@ pub trait ComponentInfoStorer {
 
     fn query(&self, query: ComponentInfoQuery) -> Result<(Vec<ComponentInfo>, i64)>;
 
-    fn query_by_subsystem_info(
-        &self,
-        subinfoid: i32,
-        query: ComponentInfoQuery,
-    ) -> Result<(Vec<ComponentInfo>, i64)>;
+    fn query_by_subsystem_info(&self, subinfoid: i32, query: ComponentInfoQuery) -> Result<(Vec<ComponentInfo>, i64)>;
 
     fn count(&self, query: ComponentInfoQuery) -> Result<i64>;
 
@@ -104,10 +89,7 @@ pub trait DeviceStorer {
 
     fn get_device(&self, id: i32) -> Result<(Device, Vec<(Subsystem, Vec<Component>)>)>;
 
-    fn query_device(
-        &self,
-        query: DeviceQuery,
-    ) -> Result<Vec<(Device, Vec<(Subsystem, Vec<Component>)>)>>;
+    fn query_device(&self, query: DeviceQuery) -> Result<Vec<(Device, Vec<(Subsystem, Vec<Component>)>)>>;
 }
 
 // ==================================================subsystem====================================================
@@ -123,10 +105,7 @@ pub trait SubsystemStorer {
 
     fn get_subsystem(&self, id: i32) -> Result<(Device, Subsystem, Vec<Component>)>;
 
-    fn query_subsystem(
-        &self,
-        query: SubsystemQuery,
-    ) -> Result<Vec<(Device, Subsystem, Vec<Component>)>>;
+    fn query_subsystem(&self, query: SubsystemQuery) -> Result<Vec<(Device, Subsystem, Vec<Component>)>>;
 }
 
 // =================================================component=========================================================
@@ -142,8 +121,7 @@ pub trait ComponentStorer {
 
     fn get_component(&self, id: i32) -> Result<(Device, Subsystem, Component)>;
 
-    fn query_component(&self, query: ComponentQuery)
-        -> Result<Vec<(Device, Subsystem, Component)>>;
+    fn query_component(&self, query: ComponentQuery) -> Result<Vec<(Device, Subsystem, Component)>>;
 }
 
 // ==============================================================relations================================================
@@ -157,16 +135,7 @@ pub trait RelationStorer {
 
     fn insert_subsysteminfo_componentinfo(&self, rel: SubinfoCominfoInsert) -> Result<usize>;
 
-    fn delete_subsysteminfo_componentinfo(
-        &self,
-        devinfo_id: i32,
-        subinfo_id: i32,
-        cominfo_id: i32,
-    ) -> Result<usize>;
+    fn delete_subsysteminfo_componentinfo(&self, devinfo_id: i32, subinfo_id: i32, cominfo_id: i32) -> Result<usize>;
 
-    fn bulk_delete_subsysteminfo_componentinfo(
-        &self,
-        devinfo_id: i32,
-        subinfo_id: i32,
-    ) -> Result<usize>;
+    fn bulk_delete_subsysteminfo_componentinfo(&self, devinfo_id: i32, subinfo_id: i32) -> Result<usize>;
 }

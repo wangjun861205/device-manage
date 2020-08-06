@@ -80,7 +80,7 @@ impl<'v> FromFormValue<'v> for MyDatetime {
 pub struct DeviceInfoInsert {
     pub name: String,
     pub model: String,
-    pub maintain_interval: Option<i32>,
+    pub maintain_interval: i32,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromForm, Default)]
@@ -372,4 +372,3 @@ pub struct SubinfoCominfoInsert {
     pub component_info_id: i32,
     pub quantity: i32,
 }
-

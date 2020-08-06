@@ -1,115 +1,96 @@
 use super::dao::*;
 use super::model::*;
-use diesel;
-use diesel::mysql::MysqlConnection;
-use std::convert::From;
-use std::fmt::{self, Display, Formatter};
+use std::error::Error;
 
-#[derive(Debug)]
-pub enum Error {
-    ErrBusiness(String),
-    ErrInternal(String),
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+pub trait Server {
+    fn add_component_info(&self, name: String, model: String, interval: i32) -> Result<usize>;
+    fn delete_component_info(&self, compinfo_id: i32) -> Result<usize>;
+    fn add_subsystem_info(&self, name: String, interval: i32) -> Result<usize>;
+    fn delete_subsystem_info(&self, subinfo_id: i32) -> Result<usize>;
+    fn add_device_info(&self, name: String, model: String, interval: i32) -> Result<usize>;
+    fn delete_device_info(&self, devinfo_id: i32) -> Result<usize>;
+    fn attach_subsystem_info(&self, devinfo_id: i32, subinfo_id: i32) -> Result<usize>;
+    fn remove_subsystem_info(&self, devinfo_id: i32, subinfo_id: i32) -> Result<usize>;
+    fn attach_component_info(&self, devinfo_id: i32, subinfo_id: i32, cominfo_id: i32, quantity: i32) -> Result<usize>;
+    fn remove_component_info(&self, devinfo_id: i32, subinfo_id: i32, cominfo_id: i32) -> Result<usize>;
+    fn create_device(&self, devinfo_id: i32) -> Result<usize>;
+    fn delete_device(&self, dev_id: i32) -> Result<usize>;
 }
 
-impl Error {
-    pub fn new_business_error(s: String) -> Self {
-        Error::ErrBusiness(s)
-    }
-
-    pub fn new_internal_error(s: String) -> Self {
-        Error::ErrInternal(s)
-    }
+pub struct Service {
+    pub devinfo: Box<dyn DeviceInfoStorer>,
+    pub subinfo: Box<dyn SubsystemInfoStorer>,
+    pub cominfo: Box<dyn ComponentInfoStorer>,
+    pub dev: Box<dyn DeviceInfoStorer>,
+    pub sub: Box<dyn SubsystemStorer>,
+    pub com: Box<dyn ComponentStorer>,
+    pub rel: Box<dyn RelationStorer>,
 }
 
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::ErrBusiness(s) => write!(f, "{}", s),
-            Error::ErrInternal(s) => write!(f, "{}", s),
-        }
+impl Server for Service {
+    fn add_device_info(&self, name: String, model: String, interval: i32) -> Result<usize> {
+        Ok(self.devinfo.insert(DeviceInfoInsert {
+            name: name,
+            model: model,
+            maintain_interval: interval,
+        })?)
     }
-}
 
-impl From<diesel::result::Error> for Error {
-    fn from(e: diesel::result::Error) -> Self {
-        Error::ErrInternal(format!("{}", e))
+    fn delete_device_info(&self, devinfo_id: i32) -> Result<usize> {
+        Ok(self.devinfo.delete(devinfo_id)?)
     }
-}
 
-type Result<T> = std::result::Result<T, Error>;
+    fn add_subsystem_info(&self, name: String, interval: i32) -> Result<usize> {
+        Ok(self.subinfo.insert(SubsystemInfoInsert {
+            name: name,
+            maintain_interval: interval,
+        })?)
+    }
 
-pub fn add_subsystem_info_to_device_info(
-    conn: &MysqlConnection,
-    devinfo_id: i32,
-    subinfo_id: i32,
-) -> Result<usize> {
-    get_device_info(conn, devinfo_id)?;
-    get_subsystem_info(conn, subinfo_id)?;
-    Ok(insert_deviceinfo_subsysteminfo(
-        conn,
-        DevinfoSubinfoInsert {
+    fn delete_subsystem_info(&self, subinfo_id: i32) -> Result<usize> {
+        Ok(self.subinfo.delete(subinfo_id)?)
+    }
+
+    fn add_component_info(&self, name: String, model: String, interval: i32) -> Result<usize> {
+        Ok(self.cominfo.insert(ComponentInfoInsert {
+            name: name,
+            model: model,
+            maintain_interval: interval,
+        })?)
+    }
+
+    fn delete_component_info(&self, cominfo_id: i32) -> Result<usize> {
+        Ok(self.cominfo.delete(cominfo_id)?)
+    }
+
+    fn attach_subsystem_info(&self, devinfo_id: i32, subinfo_id: i32) -> Result<usize> {
+        self.devinfo.get(devinfo_id)?;
+        self.subinfo.get(subinfo_id)?;
+        Ok(self.rel.insert_deviceinfo_subsysteminfo(DevinfoSubinfoInsert {
             device_info_id: devinfo_id,
             subsystem_info_id: subinfo_id,
-        },
-    )?)
-}
+        })?)
+    }
 
-pub fn remove_subsystem_info_from_device_info(
-    conn: &MysqlConnection,
-    devinfo_id: i32,
-    subinfo_id: i32,
-) -> Result<usize> {
-    delete_deviceinfo_subsysteminfo(conn, devinfo_id, subinfo_id)?;
-    Ok(bulk_delete_subsysteminfo_componentinfo(
-        conn, devinfo_id, subinfo_id,
-    )?)
-}
+    fn remove_subsystem_info(&self, devinfo_id: i32, subinfo_id: i32) -> Result<usize> {
+        self.rel.delete_deviceinfo_subsysteminfo(devinfo_id, subinfo_id)?;
+        Ok(self.rel.bulk_delete_subsysteminfo_componentinfo(devinfo_id, subinfo_id)?)
+    }
 
-pub fn add_component_info_to_subsystem_info(
-    conn: &MysqlConnection,
-    devinfo_id: i32,
-    subinfo_id: i32,
-    cominfo_id: i32,
-    quantity: i32,
-) -> Result<usize> {
-    get_subsystem_info(conn, subinfo_id)?;
-    get_component_info(conn, cominfo_id)?;
-    Ok(insert_subsysteminfo_componentinfo(
-        conn,
-        SubinfoCominfoInsert {
+    fn attach_component_info(&self, devinfo_id: i32, subinfo_id: i32, cominfo_id: i32, quantity: i32) -> Result<usize> {
+        self.subinfo.get(subinfo_id)?;
+        self.cominfo.get(cominfo_id)?;
+        Ok(self.rel.insert_subsysteminfo_componentinfo(SubinfoCominfoInsert {
             device_info_id: devinfo_id,
             subsystem_info_id: subinfo_id,
             component_info_id: cominfo_id,
             quantity: quantity,
-        },
-    )?)
+        })?)
+    }
+
+    fn remove_component_info(&self, devinfo_id: i32, subinfo_id: i32, cominfo_id: i32) -> Result<usize> {
+        Ok(self.rel.delete_subsysteminfo_componentinfo(devinfo_id, subinfo_id, cominfo_id)?)
+    }
 }
-
-pub fn remove_componentinfo_from_subsysteminfo(
-    conn: &MysqlConnection,
-    devinfo_id: i32,
-    subinfo_id: i32,
-    cominfo_id: i32,
-) -> Result<usize> {
-    Ok(delete_subsysteminfo_componentinfo(
-        conn, devinfo_id, subinfo_id, cominfo_id,
-    )?)
-}
-
-
-
-pub fn create_component_info(conn: &MysqlConnection, info: ComponentInfoInsert) -> Result<usize> {
-    Ok(insert_component_info(conn, info)?)
-}
-
-pub fn create_subsystem_info(conn: &MysqlConnection, info: SubsystemInfoInsert) -> Result<usize> {
-    Ok(insert_subsystem_info(conn, info)?)
-}
-
-pub fn create_device_info(conn: &MysqlConnection, info: DeviceInfoInsert) -> Result<usize> {
-    Ok(insert_device_info(conn, info)?)
-}
-
-
-
-

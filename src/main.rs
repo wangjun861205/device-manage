@@ -3,10 +3,10 @@
 pub mod dao;
 pub mod handler;
 pub mod model;
-pub mod schema;
 pub mod result;
+pub mod schema;
 pub mod service;
-mod storer;
+pub mod storer;
 
 extern crate chrono;
 #[macro_use]
@@ -59,20 +59,19 @@ fn main() {
         .mount(
             "/",
             routes![
-                handler::add_device_info,
-                handler::bulk_add_device_info,
-                handler::query_device_info,
-                handler::get_device_info,
-                handler::delete_device_info,
-                handler::update_device_info,
-                handler::add_device,
-                handler::bulk_add_device,
-                handler::get_device,
-                handler::query_device,
-                handler::update_device,
-                handler::delete_device,
-                handler::query_subsystem,
-                
+                // handler::add_device_info,
+                // handler::bulk_add_device_info,
+                // handler::query_device_info,
+                // handler::get_device_info,
+                // handler::delete_device_info,
+                // handler::update_device_info,
+                // handler::add_device,
+                // handler::bulk_add_device,
+                // handler::get_device,
+                // handler::query_device,
+                // handler::update_device,
+                // handler::delete_device,
+                // handler::query_subsystem,
             ],
         )
         .launch();
