@@ -2,7 +2,6 @@ use super::super::dao;
 use super::super::dao::{ComponentInfoStorer, ComponentStorer, DeviceInfoStorer, DeviceStorer, RelationStorer, SubsystemInfoStorer, SubsystemStorer};
 use super::super::model::*;
 use super::super::schema::*;
-use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::Connection;
 #[macro_use]
 use diesel;
@@ -169,11 +168,22 @@ impl DeviceInfoStorer for DeviceInfoRepository {
     }
 
     fn detail(&self, id: i32) -> dao::Result<(DeviceInfo, Vec<(SubsystemInfo, Vec<ComponentInfo>)>)> {
-        let l: Vec<(DeviceInfo, SubsystemInfo, ComponentInfo)> = device_info::table
-            .filter(device_info::id.eq(id))
-            .inner_join(deviceinfo_subsysteminfo::table.inner_join(subsystem_info::table.inner_join(subsysteminfo_componentinfo::table.inner_join(component_info::table))))
-            .select((device_info::all_columns, subsystem_info::all_columns, component_info::all_columns))
-            .load(&self.0)?;
+        let dev: DeviceInfo = device_info::table.find(id).first(&self.0)?;
+        let subs: Result<Vec<(SubsystemInfo, Vec<ComponentInfo>)>> = DeviceinfoSubsysteminfo::belonging_to(&dev)
+            .inner_join(subsystem_info::table)
+            .select(subsystem_info::all_columns)
+            .load(&self.0)?
+            .into_iter()
+            .map(|s: SubsystemInfo| {
+                let coms = SubsysteminfoComponentinfo::belonging_to(&s)
+                    .inner_join(component_info::table)
+                    .filter(subsysteminfo_componentinfo::device_info_id.eq(dev.id))
+                    .select(component_info::all_columns)
+                    .load(&self.0)?;
+                Ok((s, coms))
+            })
+            .collect();
+        Ok((dev, subs?))
     }
 }
 
