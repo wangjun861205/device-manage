@@ -25,7 +25,7 @@ pub trait DeviceInfoStorer {
     fn bulk_delete(&self, query: DeviceInfoQuery) -> Result<usize>;
     fn update(&self, id: i32, upd: DeviceInfoUpdate) -> Result<usize>;
     fn get(&self, id: i32) -> Result<DeviceInfo>;
-    fn query(&self, query: DeviceInfoQuery) -> Result<(Vec<DeviceInfo>, i64)>;
+    fn query(&self, query: &DeviceInfoQuery) -> Result<(Vec<DeviceInfo>, i64)>;
     fn query_by_subsystem_info(&self, subinfoid: i32, query: DeviceInfoQuery) -> Result<(Vec<DeviceInfo>, i64)>;
     fn count(&self, query: DeviceInfoQuery) -> Result<i64>;
     fn is_exist(&self, id: i32) -> Result<bool>;
@@ -40,7 +40,7 @@ pub trait SubsystemInfoStorer {
     fn delete(&self, id: i32) -> Result<usize>;
     fn update(&self, id: i32, upd: SubsystemInfoUpdate) -> Result<usize>;
     fn get(&self, id: i32) -> Result<SubsystemInfo>;
-    fn query(&self, query: SubsystemInfoQuery) -> Result<(Vec<SubsystemInfo>, i64)>;
+    fn query(&self, query: &SubsystemInfoQuery) -> Result<(Vec<SubsystemInfo>, i64)>;
     fn query_by_device_info(&self, devinfoid: i32, query: SubsystemInfoQuery) -> Result<(Vec<SubsystemInfo>, i64)>;
     fn query_by_component_info(&self, comid: i32, query: SubsystemInfoQuery) -> Result<(Vec<SubsystemInfo>, i64)>;
     fn count(&self, query: SubsystemInfoQuery) -> Result<i64>;
@@ -55,7 +55,7 @@ pub trait ComponentInfoStorer {
     fn delete(&self, id: i32) -> Result<usize>;
     fn update(&self, id: i32, upd: ComponentInfoUpdate) -> Result<usize>;
     fn get(&self, id: i32) -> Result<ComponentInfo>;
-    fn query(&self, query: ComponentInfoQuery) -> Result<(Vec<ComponentInfo>, i64)>;
+    fn query(&self, query: &ComponentInfoQuery) -> Result<(Vec<ComponentInfo>, i64)>;
     fn query_by_subsystem_info(&self, subinfoid: i32, query: ComponentInfoQuery) -> Result<(Vec<ComponentInfo>, i64)>;
     fn count(&self, query: ComponentInfoQuery) -> Result<i64>;
     fn is_exist(&self, id: i32) -> Result<bool>;
@@ -69,7 +69,7 @@ pub trait DeviceStorer {
     fn delete(&self, id: i32) -> Result<usize>;
     fn update(&self, id: i32, upd: DeviceUpdate) -> Result<usize>;
     fn get(&self, id: i32) -> Result<(Device, Vec<(Subsystem, Vec<Component>)>)>;
-    fn query(&self, query: DeviceQuery) -> Result<Vec<(Device, Vec<(Subsystem, Vec<Component>)>)>>;
+    fn query(&self, query: &DeviceQuery) -> Result<(Vec<(Device, Vec<(Subsystem, Vec<Component>)>)>, i64)>;
 }
 
 // ==================================================subsystem====================================================
@@ -80,7 +80,7 @@ pub trait SubsystemStorer {
     fn delete(&self, id: i32) -> Result<usize>;
     fn udpate(&self, id: i32, upd: SubsystemUpdate) -> Result<usize>;
     fn get(&self, id: i32) -> Result<(Device, Subsystem, Vec<Component>)>;
-    fn query(&self, query: SubsystemQuery) -> Result<Vec<(Device, Subsystem, Vec<Component>)>>;
+    fn query(&self, query: &SubsystemQuery) -> Result<(Vec<Subsystem>, i64)>;
 }
 
 // =================================================component=========================================================
@@ -91,7 +91,7 @@ pub trait ComponentStorer {
     fn delete(&self, id: i32) -> Result<usize>;
     fn update(&self, id: i32, upd: ComponentUpdate) -> Result<usize>;
     fn get(&self, id: i32) -> Result<(Device, Subsystem, Component)>;
-    fn query(&self, query: ComponentQuery) -> Result<Vec<(Device, Subsystem, Component)>>;
+    fn query(&self, query: &ComponentQuery) -> Result<(Vec<Component>, i64)>;
 }
 
 // ==============================================================relations================================================

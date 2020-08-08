@@ -2,10 +2,10 @@ use super::super::dao;
 use super::super::dao::{ComponentInfoStorer, ComponentStorer, DeviceInfoStorer, DeviceStorer, RelationStorer, SubsystemInfoStorer, SubsystemStorer};
 use super::super::model::*;
 use super::super::schema::*;
-use diesel::Connection;
-#[macro_use]
 use diesel;
+use diesel::mysql::Mysql;
 use diesel::sql_types::Integer;
+use diesel::Connection;
 use diesel::{select, BelongingToDsl, BoolExpressionMethods, ExpressionMethods, GroupedBy, MysqlConnection, QueryDsl, RunQueryDsl, TextExpressionMethods};
 use r2d2;
 use std::convert::From;
@@ -62,6 +62,23 @@ impl DeviceInfoRepository {
     pub fn new(conn: MysqlConnection) -> Self {
         DeviceInfoRepository(conn)
     }
+
+    fn boxed_query(&self, query: &DeviceInfoQuery) -> device_info::BoxedQuery<Mysql> {
+        let mut q = device_info::table.limit(query.size).offset((query.page - 1) * query.size).into_boxed();
+        if let Some(v) = query.name.clone() {
+            q = q.filter(device_info::name.like(format!("%{}%", v)));
+        }
+        if let Some(v) = query.model.clone() {
+            q = q.filter(device_info::model.like(format!("%{}%", v)));
+        }
+        if let Some(v) = query.maintain_interval_begin {
+            q = q.filter(device_info::maintain_interval.ge(v));
+        }
+        if let Some(v) = query.maintain_interval_end {
+            q = q.filter(device_info::maintain_interval.lt(v));
+        }
+        q
+    }
 }
 
 impl DeviceInfoStorer for DeviceInfoRepository {
@@ -103,26 +120,10 @@ impl DeviceInfoStorer for DeviceInfoRepository {
         Ok(device_info::table.find(id).first(&self.0)?)
     }
 
-    fn query(&self, query: DeviceInfoQuery) -> dao::Result<(Vec<DeviceInfo>, i64)> {
-        let mut q = device_info::table.limit(query.size).offset((query.page - 1) * query.size).into_boxed();
-        let mut cq = device_info::table.count().into_boxed();
-        if let Some(v) = query.name {
-            q = q.filter(device_info::name.like(format!("%{}%", v)));
-            cq = cq.filter(device_info::name.like(format!("%{}%", v)));
-        }
-        if let Some(v) = query.model {
-            q = q.filter(device_info::model.like(format!("%{}%", v)));
-            cq = cq.filter(device_info::model.like(format!("%{}%", v)));
-        }
-        if let Some(v) = query.maintain_interval_begin {
-            q = q.filter(device_info::maintain_interval.ge(v));
-            cq = cq.filter(device_info::maintain_interval.ge(v));
-        }
-        if let Some(v) = query.maintain_interval_end {
-            q = q.filter(device_info::maintain_interval.lt(v));
-            cq = cq.filter(device_info::maintain_interval.lt(v));
-        }
-        self.0.transaction(|| Ok((q.load(&self.0)?, cq.first(&self.0)?)))
+    fn query(&self, query: &DeviceInfoQuery) -> dao::Result<(Vec<DeviceInfo>, i64)> {
+        let q = self.boxed_query(query).limit(query.size).offset((query.page - 1) * query.size).load(&self.0)?;
+        let cq = self.boxed_query(query).count().first(&self.0)?;
+        Ok((q, cq))
     }
 
     fn query_by_subsystem_info(&self, subinfoid: i32, query: DeviceInfoQuery) -> dao::Result<(Vec<DeviceInfo>, i64)> {
@@ -197,6 +198,20 @@ impl SubsystemInfoRepository {
     pub fn new(conn: MysqlConnection) -> Self {
         SubsystemInfoRepository(conn)
     }
+
+    fn boxed_query(&self, query: &SubsystemInfoQuery) -> subsystem_info::BoxedQuery<Mysql> {
+        let mut q = subsystem_info::table.limit(query.size).offset((query.size - 1) * query.size).into_boxed();
+        if let Some(v) = query.name.clone() {
+            q = q.filter(subsystem_info::name.like(format!("%{}%", v)));
+        }
+        if let Some(v) = query.maintain_interval_begin {
+            q = q.filter(subsystem_info::maintain_interval.ge(v));
+        }
+        if let Some(v) = query.maintain_interval_end {
+            q = q.filter(subsystem_info::maintain_interval.lt(v));
+        }
+        q
+    }
 }
 
 impl SubsystemInfoStorer for SubsystemInfoRepository {
@@ -221,22 +236,10 @@ impl SubsystemInfoStorer for SubsystemInfoRepository {
         Ok(subsystem_info::table.find(id).first(&self.0)?)
     }
 
-    fn query(&self, query: SubsystemInfoQuery) -> dao::Result<(Vec<SubsystemInfo>, i64)> {
-        let mut q = subsystem_info::table.limit(query.size).offset((query.size - 1) * query.size).into_boxed();
-        let mut cq = subsystem_info::table.count().into_boxed();
-        if let Some(v) = query.name {
-            q = q.filter(subsystem_info::name.like(format!("%{}%", v)));
-            cq = cq.filter(subsystem_info::name.like(format!("%{}%", v)));
-        }
-        if let Some(v) = query.maintain_interval_begin {
-            q = q.filter(subsystem_info::maintain_interval.ge(v));
-            cq = cq.filter(subsystem_info::maintain_interval.ge(v));
-        }
-        if let Some(v) = query.maintain_interval_end {
-            q = q.filter(subsystem_info::maintain_interval.lt(v));
-            cq = cq.filter(subsystem_info::maintain_interval.lt(v));
-        }
-        self.0.transaction(|| Ok((q.load(&self.0)?, cq.first(&self.0)?)))
+    fn query(&self, query: &SubsystemInfoQuery) -> dao::Result<(Vec<SubsystemInfo>, i64)> {
+        let v = self.boxed_query(query).limit(query.size).offset((query.size - 1) * query.size).load(&self.0)?;
+        let c = self.boxed_query(query).count().first(&self.0)?;
+        Ok((v, c))
     }
 
     fn query_by_device_info(&self, devinfoid: i32, query: SubsystemInfoQuery) -> dao::Result<(Vec<SubsystemInfo>, i64)> {
@@ -306,6 +309,23 @@ impl ComponentInfoRepository {
     pub fn new(conn: MysqlConnection) -> Self {
         ComponentInfoRepository(conn)
     }
+
+    fn boxed_query(&self, query: &ComponentInfoQuery) -> component_info::BoxedQuery<Mysql> {
+        let mut q = component_info::table.limit(query.size).offset((query.page - 1) * query.size).into_boxed();
+        if let Some(v) = query.name.clone() {
+            q = q.filter(component_info::name.like(format!("%{}%", v)));
+        }
+        if let Some(v) = query.model.clone() {
+            q = q.filter(component_info::model.like(format!("%{}%", v)));
+        }
+        if let Some(v) = query.maintain_interval_begin {
+            q = q.filter(component_info::maintain_interval.ge(v));
+        }
+        if let Some(v) = query.maintain_interval_end {
+            q = q.filter(component_info::maintain_interval.lt(v));
+        }
+        q
+    }
 }
 
 impl ComponentInfoStorer for ComponentInfoRepository {
@@ -330,26 +350,10 @@ impl ComponentInfoStorer for ComponentInfoRepository {
         Ok(device_info::table.find(id).first(&self.0)?)
     }
 
-    fn query(&self, query: ComponentInfoQuery) -> dao::Result<(Vec<ComponentInfo>, i64)> {
-        let mut q = component_info::table.limit(query.size).offset((query.page - 1) * query.size).into_boxed();
-        let mut cq = component_info::table.count().into_boxed();
-        if let Some(v) = query.name {
-            q = q.filter(component_info::name.like(format!("%{}%", v)));
-            cq = cq.filter(component_info::name.like(format!("%{}%", v)));
-        }
-        if let Some(v) = query.model {
-            q = q.filter(component_info::model.like(format!("%{}%", v)));
-            cq = cq.filter(component_info::model.like(format!("%{}%", v)));
-        }
-        if let Some(v) = query.maintain_interval_begin {
-            q = q.filter(component_info::maintain_interval.ge(v));
-            cq = cq.filter(component_info::maintain_interval.ge(v));
-        }
-        if let Some(v) = query.maintain_interval_end {
-            q = q.filter(component_info::maintain_interval.lt(v));
-            cq = cq.filter(component_info::maintain_interval.lt(v));
-        }
-        self.0.transaction(|| Ok((q.load(&self.0)?, cq.first(&self.0)?)))
+    fn query(&self, query: &ComponentInfoQuery) -> dao::Result<(Vec<ComponentInfo>, i64)> {
+        let v = self.boxed_query(query).limit(query.size).offset((query.page - 1) * query.size).load(&self.0)?;
+        let c = self.boxed_query(query).count().first(&self.0)?;
+        Ok((v, c))
     }
 
     fn query_by_subsystem_info(&self, subinfoid: i32, query: ComponentInfoQuery) -> dao::Result<(Vec<ComponentInfo>, i64)> {
@@ -405,6 +409,46 @@ impl DeviceRepository {
     pub fn new(conn: MysqlConnection) -> Self {
         DeviceRepository(conn)
     }
+    fn boxed_query(&self, query: &DeviceQuery) -> device::BoxedQuery<Mysql> {
+        let mut q = device::table.into_boxed();
+        if let Some(v) = query.name.clone() {
+            q = q.filter(device::name.like(format!("%{}%", v)));
+        }
+        if let Some(v) = query.model.clone() {
+            q = q.filter(device::model.like(format!("%{}%", v)));
+        }
+        if let Some(v) = query.maintain_interval_begin {
+            q = q.filter(device::maintain_interval.ge(v));
+        }
+        if let Some(v) = query.maintain_interval_end {
+            q = q.filter(device::maintain_interval.lt(v));
+        }
+        if let Some(v) = query.last_start_at_begin.as_ref() {
+            q = q.filter(device::last_start_at.ge(v.0));
+        }
+        if let Some(v) = query.last_start_at_end.as_ref() {
+            q = q.filter(device::last_start_at.lt(v.0));
+        }
+        if let Some(v) = query.last_stop_at_begin.as_ref() {
+            q = q.filter(device::last_stop_at.ge(v.0));
+        }
+        if let Some(v) = query.last_stop_at_end.as_ref() {
+            q = q.filter(device::last_stop_at.lt(v.0));
+        }
+        if let Some(v) = query.total_duration_begin {
+            q = q.filter(device::total_duration.ge(v));
+        }
+        if let Some(v) = query.total_duration_end {
+            q = q.filter(device::total_duration.lt(v));
+        }
+        if let Some(v) = query.status {
+            q = q.filter(device::status.eq(v));
+        }
+        if let (Some(p), Some(s)) = (query.page, query.size) {
+            q = q.limit(s).offset((p - 1) * s)
+        }
+        q
+    }
 }
 
 impl DeviceStorer for DeviceRepository {
@@ -434,50 +478,18 @@ impl DeviceStorer for DeviceRepository {
         Ok((dev, grouped_subs_coms))
     }
 
-    fn query(&self, query: DeviceQuery) -> dao::Result<Vec<(Device, Vec<(Subsystem, Vec<Component>)>)>> {
-        let mut q = device::table.into_boxed();
-        if let Some(v) = query.name {
-            q = q.filter(device::name.like(format!("%{}%", v)));
-        }
-        if let Some(v) = query.model {
-            q = q.filter(device::model.like(format!("%{}%", v)));
-        }
-        if let Some(v) = query.maintain_interval_begin {
-            q = q.filter(device::maintain_interval.ge(v));
-        }
-        if let Some(v) = query.maintain_interval_end {
-            q = q.filter(device::maintain_interval.lt(v));
-        }
-        if let Some(v) = query.last_start_at_begin {
-            q = q.filter(device::last_start_at.ge(v.0));
-        }
-        if let Some(v) = query.last_start_at_end {
-            q = q.filter(device::last_start_at.lt(v.0));
-        }
-        if let Some(v) = query.last_stop_at_begin {
-            q = q.filter(device::last_stop_at.ge(v.0));
-        }
-        if let Some(v) = query.last_stop_at_end {
-            q = q.filter(device::last_stop_at.lt(v.0));
-        }
-        if let Some(v) = query.total_duration_begin {
-            q = q.filter(device::total_duration.ge(v));
-        }
-        if let Some(v) = query.total_duration_end {
-            q = q.filter(device::total_duration.lt(v));
-        }
-        if let Some(v) = query.status {
-            q = q.filter(device::status.eq(v));
-        }
+    fn query(&self, query: &DeviceQuery) -> dao::Result<(Vec<(Device, Vec<(Subsystem, Vec<Component>)>)>, i64)> {
+        let mut q = self.boxed_query(query);
         if let (Some(p), Some(s)) = (query.page, query.size) {
             q = q.limit(s).offset((p - 1) * s)
         }
+        let c = self.boxed_query(query).count().first(&self.0)?;
         let devs: Vec<Device> = q.load(&self.0)?;
         let subs: Vec<Subsystem> = Subsystem::belonging_to(&devs).load(&self.0)?;
         let coms: Vec<Component> = Component::belonging_to(&subs).load(&self.0)?;
         let grouped_coms: Vec<Vec<Component>> = coms.grouped_by(&subs);
         let grouped_subs_coms: Vec<Vec<(Subsystem, Vec<Component>)>> = subs.into_iter().zip(grouped_coms).grouped_by(&devs);
-        Ok(devs.into_iter().zip(grouped_subs_coms).collect())
+        Ok((devs.into_iter().zip(grouped_subs_coms).collect(), c))
     }
 }
 
@@ -486,6 +498,20 @@ pub struct SubsystemRepository(MysqlConnection);
 impl SubsystemRepository {
     pub fn new(conn: MysqlConnection) -> Self {
         SubsystemRepository(conn)
+    }
+
+    fn boxed_query(&self, query: &SubsystemQuery) -> subsystem::BoxedQuery<Mysql> {
+        let mut q = subsystem::table.into_boxed();
+        if let Some(v) = query.subsystem_name.clone() {
+            q = q.filter(subsystem::name.like(format!("%{}%", v)));
+        }
+        if let Some(v) = query.maintain_interval_begin {
+            q = q.filter(subsystem::maintain_interval.ge(v));
+        }
+        if let Some(v) = query.maintain_interval_end {
+            q = q.filter(subsystem::maintain_interval.lt(v));
+        }
+        q
     }
 }
 
@@ -513,54 +539,14 @@ impl SubsystemStorer for SubsystemRepository {
         Ok((dev_sub.0, dev_sub.1, coms))
     }
 
-    fn query(&self, query: SubsystemQuery) -> dao::Result<Vec<(Device, Subsystem, Vec<Component>)>> {
-        let mut q = device::table.inner_join(subsystem::table).into_boxed();
-        if let Some(v) = query.device_name {
-            q = q.filter(device::name.like(format!("%{}%", v)));
-        }
-        if let Some(v) = query.device_model {
-            q = q.filter(device::model.like(format!("%{}%", v)));
-        }
-        if let Some(v) = query.device_maintain_interval_begin {
-            q = q.filter(device::maintain_interval.ge(v));
-        }
-        if let Some(v) = query.device_maintain_interval_end {
-            q = q.filter(device::maintain_interval.lt(v));
-        }
-        if let Some(v) = query.device_last_start_at_begin {
-            q = q.filter(device::last_start_at.ge(v.0));
-        }
-        if let Some(v) = query.device_last_start_at_end {
-            q = q.filter(device::last_start_at.lt(v.0));
-        }
-        if let Some(v) = query.device_last_stop_at_begin {
-            q = q.filter(device::last_stop_at.ge(v.0));
-        }
-        if let Some(v) = query.device_last_stop_at_end {
-            q = q.filter(device::last_stop_at.lt(v.0));
-        }
-        if let Some(v) = query.device_total_duration_begin {
-            q = q.filter(device::total_duration.ge(v));
-        }
-        if let Some(v) = query.device_total_duration_end {
-            q = q.filter(device::total_duration.lt(v));
-        }
-        if let Some(v) = query.device_status {
-            q = q.filter(device::status.eq(v));
-        }
-        if let Some(v) = query.maintain_interval_begin {
-            q = q.filter(subsystem::maintain_interval.ge(v));
-        }
-        if let Some(v) = query.maintain_interval_end {
-            q = q.filter(subsystem::maintain_interval.lt(v));
-        }
+    fn query(&self, query: &SubsystemQuery) -> dao::Result<(Vec<Subsystem>, i64)> {
+        let mut q = self.boxed_query(query);
         if let (Some(p), Some(s)) = (query.page, query.size) {
             q = q.limit(s).offset((p - 1) * s)
         }
-        let dev_subs: Vec<(Device, Subsystem)> = q.load(&self.0)?;
-        let subs: Vec<Subsystem> = dev_subs.iter().map(|d| d.1.clone()).collect();
-        let coms: Vec<Vec<Component>> = Component::belonging_to(&subs).load(&self.0)?.grouped_by(&subs);
-        Ok(dev_subs.into_iter().zip(coms).map(|t| ((t.0).0, (t.0).1, t.1)).collect())
+        let v = q.load(&self.0)?;
+        let c = self.boxed_query(query).count().first(&self.0)?;
+        Ok((v, c))
     }
 }
 
@@ -569,6 +555,23 @@ pub struct ComponentRepository(MysqlConnection);
 impl ComponentRepository {
     pub fn new(conn: MysqlConnection) -> Self {
         ComponentRepository(conn)
+    }
+
+    fn boxed_query(&self, query: &ComponentQuery) -> component::BoxedQuery<Mysql> {
+        let mut q = component::table.into_boxed();
+        if let Some(v) = query.name.clone() {
+            q = q.filter(component::name.like(format!("%{}%", v)));
+        }
+        if let Some(v) = query.model.clone() {
+            q = q.filter(component::model.like(format!("%{}%", v)));
+        }
+        if let Some(v) = query.maintain_interval_begin {
+            q = q.filter(component::maintain_interval.ge(v));
+        }
+        if let Some(v) = query.maintain_interval_end {
+            q = q.filter(component::maintain_interval.lt(v));
+        }
+        q
     }
 }
 
@@ -598,46 +601,14 @@ impl ComponentStorer for ComponentRepository {
         Ok((g.0, (g.1).0, (g.1).1))
     }
 
-    fn query(&self, query: ComponentQuery) -> dao::Result<Vec<(Device, Subsystem, Component)>> {
-        let mut q = device::table.inner_join(subsystem::table.inner_join(component::table)).into_boxed();
-        if let Some(v) = query.device_name {
-            q = q.filter(device::name.like(format!("%{}%", v)))
-        }
-        if let Some(v) = query.device_model {
-            q = q.filter(device::model.like(format!("%{}%", v)));
-        }
-        if let Some(v) = query.device_maintain_interval_begin {
-            q = q.filter(device::maintain_interval.ge(v));
-        }
-        if let Some(v) = query.device_maintain_interval_end {
-            q = q.filter(device::maintain_interval.lt(v));
-        }
-        if let Some(v) = query.subsystem_name {
-            q = q.filter(subsystem::name.like(format!("%{}%", v)));
-        }
-        if let Some(v) = query.subsystem_maintain_interval_begin {
-            q = q.filter(subsystem::maintain_interval.ge(v));
-        }
-        if let Some(v) = query.subsystem_maintain_interval_end {
-            q = q.filter(subsystem::maintain_interval.lt(v));
-        }
-        if let Some(v) = query.name {
-            q = q.filter(component::name.like(format!("%{}%", v)));
-        }
-        if let Some(v) = query.model {
-            q = q.filter(component::model.like(format!("%{}%", v)));
-        }
-        if let Some(v) = query.maintain_interval_begin {
-            q = q.filter(component::maintain_interval.ge(v));
-        }
-        if let Some(v) = query.maintain_interval_end {
-            q = q.filter(component::maintain_interval.lt(v));
-        }
+    fn query(&self, query: &ComponentQuery) -> dao::Result<(Vec<Component>, i64)> {
+        let mut q = self.boxed_query(query);
         if let (Some(p), Some(s)) = (query.page, query.size) {
             q = q.limit(s).offset((p - 1) * s)
         }
-        let g: Vec<(Device, (Subsystem, Component))> = q.load(&self.0)?;
-        Ok(g.into_iter().map(|t| (t.0, (t.1).0, (t.1).1)).collect())
+        let v = q.load(&self.0)?;
+        let c = self.boxed_query(query).count().first(&self.0)?;
+        Ok((v, c))
     }
 }
 

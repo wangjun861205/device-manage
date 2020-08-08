@@ -126,4 +126,8 @@ impl Server for Service {
         }
         Ok(())
     }
+
+    fn delete_device(&self, id: i32) -> Result<usize> {
+        Ok(self.dev.delete(id)?)
+    }
 }
