@@ -5,10 +5,13 @@ use super::super::schema::*;
 use diesel::Connection;
 #[macro_use]
 use diesel;
-use diesel::{BelongingToDsl, BoolExpressionMethods, ExpressionMethods, GroupedBy, MysqlConnection, QueryDsl, RunQueryDsl, TextExpressionMethods};
+use diesel::sql_types::Integer;
+use diesel::{select, BelongingToDsl, BoolExpressionMethods, ExpressionMethods, GroupedBy, MysqlConnection, QueryDsl, RunQueryDsl, TextExpressionMethods};
 use r2d2;
 use std::convert::From;
 use std::fmt::{self, Display, Formatter};
+
+no_arg_sql_function!(last_insert_id, Integer);
 
 #[derive(Debug)]
 pub struct Error(String);
@@ -62,8 +65,9 @@ impl DeviceInfoRepository {
 }
 
 impl DeviceInfoStorer for DeviceInfoRepository {
-    fn insert(&self, info: DeviceInfoInsert) -> dao::Result<usize> {
-        Ok(diesel::insert_into(device_info::table).values(info).execute(&self.0)?)
+    fn insert(&self, info: DeviceInfoInsert) -> dao::Result<i32> {
+        diesel::insert_into(device_info::table).values(info).execute(&self.0)?;
+        Ok(select(last_insert_id).first(&self.0)?)
     }
 
     fn bulk_insert(&self, infos: &Vec<DeviceInfoInsert>) -> dao::Result<usize> {
@@ -196,8 +200,9 @@ impl SubsystemInfoRepository {
 }
 
 impl SubsystemInfoStorer for SubsystemInfoRepository {
-    fn insert(&self, info: SubsystemInfoInsert) -> dao::Result<usize> {
-        Ok(diesel::insert_into(subsystem_info::table).values(info).execute(&self.0)?)
+    fn insert(&self, info: SubsystemInfoInsert) -> dao::Result<i32> {
+        diesel::insert_into(subsystem_info::table).values(info).execute(&self.0)?;
+        Ok(select(last_insert_id).first(&self.0)?)
     }
 
     fn bulk_insert(&self, infos: &Vec<SubsystemInfoInsert>) -> dao::Result<usize> {
@@ -304,8 +309,9 @@ impl ComponentInfoRepository {
 }
 
 impl ComponentInfoStorer for ComponentInfoRepository {
-    fn insert(&self, info: ComponentInfoInsert) -> dao::Result<usize> {
-        Ok(diesel::insert_into(component_info::table).values(info).execute(&self.0)?)
+    fn insert(&self, info: ComponentInfoInsert) -> dao::Result<i32> {
+        diesel::insert_into(component_info::table).values(info).execute(&self.0)?;
+        Ok(select(last_insert_id).first(&self.0)?)
     }
 
     fn bulk_insert(&self, infos: &Vec<ComponentInfoInsert>) -> dao::Result<usize> {
@@ -402,23 +408,24 @@ impl DeviceRepository {
 }
 
 impl DeviceStorer for DeviceRepository {
-    fn insert_device(&self, dev: DeviceInsert) -> dao::Result<usize> {
-        Ok(diesel::insert_into(device::table).values(dev).execute(&self.0)?)
+    fn insert(&self, dev: DeviceInsert) -> dao::Result<i32> {
+        diesel::insert_into(device::table).values(dev).execute(&self.0)?;
+        Ok(select(last_insert_id).first(&self.0)?)
     }
 
-    fn bulk_insert_device(&self, devs: &Vec<DeviceInsert>) -> dao::Result<usize> {
+    fn bulk_insert(&self, devs: &Vec<DeviceInsert>) -> dao::Result<usize> {
         Ok(diesel::insert_into(device::table).values(devs).execute(&self.0)?)
     }
 
-    fn delete_device(&self, id: i32) -> dao::Result<usize> {
+    fn delete(&self, id: i32) -> dao::Result<usize> {
         Ok(diesel::delete(device::table.find(id)).execute(&self.0)?)
     }
 
-    fn update_device(&self, id: i32, upd: DeviceUpdate) -> dao::Result<usize> {
+    fn update(&self, id: i32, upd: DeviceUpdate) -> dao::Result<usize> {
         Ok(diesel::update(device::table.find(id)).set(upd).execute(&self.0)?)
     }
 
-    fn get_device(&self, id: i32) -> dao::Result<(Device, Vec<(Subsystem, Vec<Component>)>)> {
+    fn get(&self, id: i32) -> dao::Result<(Device, Vec<(Subsystem, Vec<Component>)>)> {
         let dev: Device = device::table.find(id).first(&self.0)?;
         let subs: Vec<Subsystem> = Subsystem::belonging_to(&dev).load(&self.0)?;
         let coms: Vec<Component> = Component::belonging_to(&subs).load(&self.0)?;
@@ -427,7 +434,7 @@ impl DeviceStorer for DeviceRepository {
         Ok((dev, grouped_subs_coms))
     }
 
-    fn query_device(&self, query: DeviceQuery) -> dao::Result<Vec<(Device, Vec<(Subsystem, Vec<Component>)>)>> {
+    fn query(&self, query: DeviceQuery) -> dao::Result<Vec<(Device, Vec<(Subsystem, Vec<Component>)>)>> {
         let mut q = device::table.into_boxed();
         if let Some(v) = query.name {
             q = q.filter(device::name.like(format!("%{}%", v)));
@@ -483,29 +490,30 @@ impl SubsystemRepository {
 }
 
 impl SubsystemStorer for SubsystemRepository {
-    fn insert_subsystem(&self, sub: SubsystemInsert) -> dao::Result<usize> {
-        Ok(diesel::insert_into(subsystem::table).values(sub).execute(&self.0)?)
+    fn insert(&self, sub: SubsystemInsert) -> dao::Result<i32> {
+        diesel::insert_into(subsystem::table).values(sub).execute(&self.0)?;
+        Ok(select(last_insert_id).first(&self.0)?)
     }
 
-    fn bulk_insert_subsystem(&self, subs: &Vec<SubsystemInsert>) -> dao::Result<usize> {
+    fn bulk_insert(&self, subs: &Vec<SubsystemInsert>) -> dao::Result<usize> {
         Ok(diesel::insert_into(subsystem::table).values(subs).execute(&self.0)?)
     }
 
-    fn delete_subsystem(&self, id: i32) -> dao::Result<usize> {
+    fn delete(&self, id: i32) -> dao::Result<usize> {
         Ok(diesel::delete(subsystem::table.find(id)).execute(&self.0)?)
     }
 
-    fn udpate_subsystem(&self, id: i32, upd: SubsystemUpdate) -> dao::Result<usize> {
+    fn udpate(&self, id: i32, upd: SubsystemUpdate) -> dao::Result<usize> {
         Ok(diesel::update(subsystem::table.find(id)).set(upd).execute(&self.0)?)
     }
 
-    fn get_subsystem(&self, id: i32) -> dao::Result<(Device, Subsystem, Vec<Component>)> {
+    fn get(&self, id: i32) -> dao::Result<(Device, Subsystem, Vec<Component>)> {
         let dev_sub: (Device, Subsystem) = device::table.inner_join(subsystem::table).filter(subsystem::id.eq(id)).first(&self.0)?;
         let coms: Vec<Component> = Component::belonging_to(&dev_sub.1).load(&self.0)?;
         Ok((dev_sub.0, dev_sub.1, coms))
     }
 
-    fn query_subsystem(&self, query: SubsystemQuery) -> dao::Result<Vec<(Device, Subsystem, Vec<Component>)>> {
+    fn query(&self, query: SubsystemQuery) -> dao::Result<Vec<(Device, Subsystem, Vec<Component>)>> {
         let mut q = device::table.inner_join(subsystem::table).into_boxed();
         if let Some(v) = query.device_name {
             q = q.filter(device::name.like(format!("%{}%", v)));
@@ -565,23 +573,24 @@ impl ComponentRepository {
 }
 
 impl ComponentStorer for ComponentRepository {
-    fn insert_component(&self, com: ComponentInsert) -> dao::Result<usize> {
-        Ok(diesel::insert_into(component::table).values(com).execute(&self.0)?)
+    fn insert(&self, com: ComponentInsert) -> dao::Result<i32> {
+        diesel::insert_into(component::table).values(com).execute(&self.0)?;
+        Ok(select(last_insert_id).first(&self.0)?)
     }
 
-    fn bulk_insert_component(&self, coms: &Vec<ComponentInsert>) -> dao::Result<usize> {
+    fn bulk_insert(&self, coms: &Vec<ComponentInsert>) -> dao::Result<usize> {
         Ok(diesel::insert_into(component::table).values(coms).execute(&self.0)?)
     }
 
-    fn delete_component(&self, id: i32) -> dao::Result<usize> {
+    fn delete(&self, id: i32) -> dao::Result<usize> {
         Ok(diesel::delete(component::table.find(id)).execute(&self.0)?)
     }
 
-    fn update_component(&self, id: i32, upd: ComponentUpdate) -> dao::Result<usize> {
+    fn update(&self, id: i32, upd: ComponentUpdate) -> dao::Result<usize> {
         Ok(diesel::update(component::table.find(id)).set(upd).execute(&self.0)?)
     }
 
-    fn get_component(&self, id: i32) -> dao::Result<(Device, Subsystem, Component)> {
+    fn get(&self, id: i32) -> dao::Result<(Device, Subsystem, Component)> {
         let g: (Device, (Subsystem, Component)) = device::table
             .inner_join(subsystem::table.inner_join(component::table))
             .filter(component::id.eq(id))
@@ -589,7 +598,7 @@ impl ComponentStorer for ComponentRepository {
         Ok((g.0, (g.1).0, (g.1).1))
     }
 
-    fn query_component(&self, query: ComponentQuery) -> dao::Result<Vec<(Device, Subsystem, Component)>> {
+    fn query(&self, query: ComponentQuery) -> dao::Result<Vec<(Device, Subsystem, Component)>> {
         let mut q = device::table.inner_join(subsystem::table.inner_join(component::table)).into_boxed();
         if let Some(v) = query.device_name {
             q = q.filter(device::name.like(format!("%{}%", v)))
