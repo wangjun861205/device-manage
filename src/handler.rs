@@ -1,6 +1,8 @@
 use super::dao;
 use super::model::*;
 use super::result::Result;
+use super::service;
+use super::storer::mysqlstorer;
 use super::MysqlConn;
 use rocket::request::Form;
 use rocket_contrib::json::Json;

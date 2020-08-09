@@ -56,10 +56,14 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 //===========================================================device info===================================================
 
-pub struct DeviceInfoRepository(MysqlConnection);
+use std::rc::Rc;
+use diesel::r2d2::{PooledConnection, ConnectionManager};
+
+pub struct DeviceInfoRepository(Rc<PooledConnection<ConnectionManager<MysqlConnection>>>);
+
 
 impl DeviceInfoRepository {
-    pub fn new(conn: MysqlConnection) -> Self {
+    pub fn new(conn: Rc<PooledConnection<ConnectionManager<MysqlConnection>>>) -> Self {
         DeviceInfoRepository(conn)
     }
 
@@ -83,16 +87,16 @@ impl DeviceInfoRepository {
 
 impl DeviceInfoStorer for DeviceInfoRepository {
     fn insert(&self, info: DeviceInfoInsert) -> dao::Result<i32> {
-        diesel::insert_into(device_info::table).values(info).execute(&self.0)?;
-        Ok(select(last_insert_id).first(&self.0)?)
+        diesel::insert_into(device_info::table).values(info).execute(self.0.as_ref())?;
+        Ok(select(last_insert_id).first(self.0.as_ref())?)
     }
 
     fn bulk_insert(&self, infos: &Vec<DeviceInfoInsert>) -> dao::Result<usize> {
-        Ok(diesel::insert_into(device_info::table).values(infos).execute(&self.0)?)
+        Ok(diesel::insert_into(device_info::table).values(infos).execute(self.0.as_ref())?)
     }
 
     fn delete(&self, id: i32) -> dao::Result<usize> {
-        Ok(diesel::delete(device_info::table.find(id)).execute(&self.0)?)
+        Ok(diesel::delete(device_info::table.find(id)).execute(self.0.as_ref())?)
     }
 
     fn bulk_delete(&self, query: DeviceInfoQuery) -> dao::Result<usize> {
@@ -109,20 +113,20 @@ impl DeviceInfoStorer for DeviceInfoRepository {
         if let Some(v) = query.maintain_interval_end {
             q = q.filter(device_info::maintain_interval.lt(v));
         }
-        Ok(q.execute(&self.0)?)
+        Ok(q.execute(self.0.as_ref())?)
     }
 
     fn update(&self, id: i32, upd: DeviceInfoUpdate) -> dao::Result<usize> {
-        Ok(diesel::update(device_info::table).filter(device_info::id.eq(id)).set(upd).execute(&self.0)?)
+        Ok(diesel::update(device_info::table).filter(device_info::id.eq(id)).set(upd).execute(self.0.as_ref())?)
     }
 
     fn get(&self, id: i32) -> dao::Result<DeviceInfo> {
-        Ok(device_info::table.find(id).first(&self.0)?)
+        Ok(device_info::table.find(id).first(self.0.as_ref())?)
     }
 
     fn query(&self, query: &DeviceInfoQuery) -> dao::Result<(Vec<DeviceInfo>, i64)> {
-        let q = self.boxed_query(query).limit(query.size).offset((query.page - 1) * query.size).load(&self.0)?;
-        let cq = self.boxed_query(query).count().first(&self.0)?;
+        let q = self.boxed_query(query).limit(query.size).offset((query.page - 1) * query.size).load(self.0.as_ref())?;
+        let cq = self.boxed_query(query).count().first(self.0.as_ref())?;
         Ok((q, cq))
     }
 
@@ -148,7 +152,7 @@ impl DeviceInfoStorer for DeviceInfoRepository {
             q = q.filter(device_info::maintain_interval.lt(v));
             cq = cq.filter(device_info::maintain_interval.lt(v));
         }
-        self.0.transaction(|| Ok((q.load(&self.0)?, cq.first(&self.0)?)))
+        self.0.as_ref().transaction(|| Ok((q.load(self.0.as_ref())?, cq.first(self.0.as_ref())?)))
     }
 
     fn count(&self, query: DeviceInfoQuery) -> dao::Result<i64> {
@@ -165,26 +169,26 @@ impl DeviceInfoStorer for DeviceInfoRepository {
         if let Some(v) = query.maintain_interval_end {
             q = q.filter(device_info::maintain_interval.lt(v));
         }
-        Ok(q.count().first(&self.0)?)
+        Ok(q.count().first(self.0.as_ref())?)
     }
 
     fn is_exist(&self, id: i32) -> dao::Result<bool> {
-        Ok(device_info::table.filter(device_info::id.eq(id)).count().execute(&self.0)? > 0)
+        Ok(device_info::table.filter(device_info::id.eq(id)).count().execute(self.0.as_ref())? > 0)
     }
 
     fn detail(&self, id: i32) -> dao::Result<(DeviceInfo, Vec<(SubsystemInfo, Vec<ComponentInfo>)>)> {
-        let dev: DeviceInfo = device_info::table.find(id).first(&self.0)?;
+        let dev: DeviceInfo = device_info::table.find(id).first(self.0.as_ref())?;
         let subs: Result<Vec<(SubsystemInfo, Vec<ComponentInfo>)>> = DeviceinfoSubsysteminfo::belonging_to(&dev)
             .inner_join(subsystem_info::table)
             .select(subsystem_info::all_columns)
-            .load(&self.0)?
+            .load(self.0.as_ref())?
             .into_iter()
             .map(|s: SubsystemInfo| {
                 let coms = SubsysteminfoComponentinfo::belonging_to(&s)
                     .inner_join(component_info::table)
                     .filter(subsysteminfo_componentinfo::device_info_id.eq(dev.id))
                     .select(component_info::all_columns)
-                    .load(&self.0)?;
+                    .load(self.0.as_ref())?;
                 Ok((s, coms))
             })
             .collect();
@@ -192,10 +196,10 @@ impl DeviceInfoStorer for DeviceInfoRepository {
     }
 }
 
-pub struct SubsystemInfoRepository(MysqlConnection);
+pub struct SubsystemInfoRepository(Rc<PooledConnection<ConnectionManager<MysqlConnection>>>);
 
 impl SubsystemInfoRepository {
-    pub fn new(conn: MysqlConnection) -> Self {
+    pub fn new(conn: Rc<PooledConnection<ConnectionManager<MysqlConnection>>>) -> Self {
         SubsystemInfoRepository(conn)
     }
 
@@ -214,31 +218,33 @@ impl SubsystemInfoRepository {
     }
 }
 
-impl SubsystemInfoStorer for SubsystemInfoRepository {
+
+
+impl<'a> SubsystemInfoStorer for SubsystemInfoRepository {
     fn insert(&self, info: SubsystemInfoInsert) -> dao::Result<i32> {
-        diesel::insert_into(subsystem_info::table).values(info).execute(&self.0)?;
-        Ok(select(last_insert_id).first(&self.0)?)
+        diesel::insert_into(subsystem_info::table).values(info).execute(self.0.as_ref())?;
+        Ok(select(last_insert_id).first(self.0.as_ref())?)
     }
 
     fn bulk_insert(&self, infos: &Vec<SubsystemInfoInsert>) -> dao::Result<usize> {
-        Ok(diesel::insert_into(subsystem_info::table).values(infos).execute(&self.0)?)
+        Ok(diesel::insert_into(subsystem_info::table).values(infos).execute(self.0.as_ref())?)
     }
 
     fn delete(&self, id: i32) -> dao::Result<usize> {
-        Ok(diesel::delete(subsystem_info::table.find(id)).execute(&self.0)?)
+        Ok(diesel::delete(subsystem_info::table.find(id)).execute(self.0.as_ref())?)
     }
 
     fn update(&self, id: i32, upd: SubsystemInfoUpdate) -> dao::Result<usize> {
-        Ok(diesel::update(subsystem_info::table.find(id)).set(upd).execute(&self.0)?)
+        Ok(diesel::update(subsystem_info::table.find(id)).set(upd).execute(self.0.as_ref())?)
     }
 
     fn get(&self, id: i32) -> dao::Result<SubsystemInfo> {
-        Ok(subsystem_info::table.find(id).first(&self.0)?)
+        Ok(subsystem_info::table.find(id).first(self.0.as_ref())?)
     }
 
     fn query(&self, query: &SubsystemInfoQuery) -> dao::Result<(Vec<SubsystemInfo>, i64)> {
-        let v = self.boxed_query(query).limit(query.size).offset((query.size - 1) * query.size).load(&self.0)?;
-        let c = self.boxed_query(query).count().first(&self.0)?;
+        let v = self.boxed_query(query).limit(query.size).offset((query.size - 1) * query.size).load(self.0.as_ref())?;
+        let c = self.boxed_query(query).count().first(self.0.as_ref())?;
         Ok((v, c))
     }
 
@@ -260,7 +266,7 @@ impl SubsystemInfoStorer for SubsystemInfoRepository {
             q = q.filter(subsystem_info::maintain_interval.lt(v));
             cq = cq.filter(subsystem_info::maintain_interval.lt(v));
         }
-        self.0.transaction(|| Ok((q.load(&self.0)?, cq.first(&self.0)?)))
+        self.0.as_ref().transaction(|| Ok((q.load(self.0.as_ref())?, cq.first(self.0.as_ref())?)))
     }
 
     fn query_by_component_info(&self, comid: i32, query: SubsystemInfoQuery) -> dao::Result<(Vec<SubsystemInfo>, i64)> {
@@ -281,7 +287,7 @@ impl SubsystemInfoStorer for SubsystemInfoRepository {
             q = q.filter(subsystem_info::maintain_interval.lt(v));
             cq = cq.filter(subsystem_info::maintain_interval.lt(v));
         }
-        self.0.transaction(|| Ok((q.load(&self.0)?, cq.first(&self.0)?)))
+        self.0.as_ref().transaction(|| Ok((q.load(self.0.as_ref())?, cq.first(self.0.as_ref())?)))
     }
 
     fn count(&self, query: SubsystemInfoQuery) -> dao::Result<i64> {
@@ -295,18 +301,18 @@ impl SubsystemInfoStorer for SubsystemInfoRepository {
         if let Some(v) = query.maintain_interval_end {
             q = q.filter(subsystem_info::maintain_interval.lt(v));
         }
-        Ok(q.first(&self.0)?)
+        Ok(q.first(self.0.as_ref())?)
     }
 
     fn is_exist(&self, id: i32) -> dao::Result<bool> {
-        Ok(subsystem_info::table.filter(subsystem_info::id.eq(id)).count().execute(&self.0)? > 0)
+        Ok(subsystem_info::table.filter(subsystem_info::id.eq(id)).count().execute(self.0.as_ref())? > 0)
     }
 }
 
-pub struct ComponentInfoRepository(MysqlConnection);
+pub struct ComponentInfoRepository(Rc<PooledConnection<ConnectionManager<MysqlConnection>>>);
 
 impl ComponentInfoRepository {
-    pub fn new(conn: MysqlConnection) -> Self {
+    pub fn new(conn: Rc<PooledConnection<ConnectionManager<MysqlConnection>>>) -> Self {
         ComponentInfoRepository(conn)
     }
 
@@ -330,29 +336,29 @@ impl ComponentInfoRepository {
 
 impl ComponentInfoStorer for ComponentInfoRepository {
     fn insert(&self, info: ComponentInfoInsert) -> dao::Result<i32> {
-        diesel::insert_into(component_info::table).values(info).execute(&self.0)?;
-        Ok(select(last_insert_id).first(&self.0)?)
+        diesel::insert_into(component_info::table).values(info).execute(self.0.as_ref())?;
+        Ok(select(last_insert_id).first(self.0.as_ref())?)
     }
 
     fn bulk_insert(&self, infos: &Vec<ComponentInfoInsert>) -> dao::Result<usize> {
-        Ok(diesel::insert_into(component_info::table).values(infos).execute(&self.0)?)
+        Ok(diesel::insert_into(component_info::table).values(infos).execute(self.0.as_ref())?)
     }
 
     fn delete(&self, id: i32) -> dao::Result<usize> {
-        Ok(diesel::delete(component_info::table.find(id)).execute(&self.0)?)
+        Ok(diesel::delete(component_info::table.find(id)).execute(self.0.as_ref())?)
     }
 
     fn update(&self, id: i32, upd: ComponentInfoUpdate) -> dao::Result<usize> {
-        Ok(diesel::update(component_info::table.find(id)).set(upd).execute(&self.0)?)
+        Ok(diesel::update(component_info::table.find(id)).set(upd).execute(self.0.as_ref())?)
     }
 
     fn get(&self, id: i32) -> dao::Result<ComponentInfo> {
-        Ok(device_info::table.find(id).first(&self.0)?)
+        Ok(device_info::table.find(id).first(self.0.as_ref())?)
     }
 
     fn query(&self, query: &ComponentInfoQuery) -> dao::Result<(Vec<ComponentInfo>, i64)> {
-        let v = self.boxed_query(query).limit(query.size).offset((query.page - 1) * query.size).load(&self.0)?;
-        let c = self.boxed_query(query).count().first(&self.0)?;
+        let v = self.boxed_query(query).limit(query.size).offset((query.page - 1) * query.size).load(self.0.as_ref())?;
+        let c = self.boxed_query(query).count().first(self.0.as_ref())?;
         Ok((v, c))
     }
 
@@ -378,7 +384,7 @@ impl ComponentInfoStorer for ComponentInfoRepository {
             q = q.filter(component_info::maintain_interval.lt(v));
             cq = cq.filter(component_info::maintain_interval.lt(v));
         }
-        self.0.transaction(|| Ok((q.load(&self.0)?, cq.first(&self.0)?)))
+        self.0.as_ref().transaction(|| Ok((q.load(self.0.as_ref())?, cq.first(self.0.as_ref())?)))
     }
 
     fn count(&self, query: ComponentInfoQuery) -> dao::Result<i64> {
@@ -395,18 +401,18 @@ impl ComponentInfoStorer for ComponentInfoRepository {
         if let Some(v) = query.maintain_interval_end {
             q = q.filter(component_info::maintain_interval.lt(v));
         }
-        Ok(q.first(&self.0)?)
+        Ok(q.first(self.0.as_ref())?)
     }
 
     fn is_exist(&self, id: i32) -> dao::Result<bool> {
-        Ok(component_info::table.filter(component_info::id.eq(id)).count().execute(&self.0)? > 0)
+        Ok(component_info::table.filter(component_info::id.eq(id)).count().execute(self.0.as_ref())? > 0)
     }
 }
 
-pub struct DeviceRepository(MysqlConnection);
+pub struct DeviceRepository(Rc<PooledConnection<ConnectionManager<MysqlConnection>>>);
 
 impl DeviceRepository {
-    pub fn new(conn: MysqlConnection) -> Self {
+    pub fn new(conn: Rc<PooledConnection<ConnectionManager<MysqlConnection>>>) -> Self {
         DeviceRepository(conn)
     }
     fn boxed_query(&self, query: &DeviceQuery) -> device::BoxedQuery<Mysql> {
@@ -453,26 +459,26 @@ impl DeviceRepository {
 
 impl DeviceStorer for DeviceRepository {
     fn insert(&self, dev: DeviceInsert) -> dao::Result<i32> {
-        diesel::insert_into(device::table).values(dev).execute(&self.0)?;
-        Ok(select(last_insert_id).first(&self.0)?)
+        diesel::insert_into(device::table).values(dev).execute(self.0.as_ref())?;
+        Ok(select(last_insert_id).first(self.0.as_ref())?)
     }
 
     fn bulk_insert(&self, devs: &Vec<DeviceInsert>) -> dao::Result<usize> {
-        Ok(diesel::insert_into(device::table).values(devs).execute(&self.0)?)
+        Ok(diesel::insert_into(device::table).values(devs).execute(self.0.as_ref())?)
     }
 
     fn delete(&self, id: i32) -> dao::Result<usize> {
-        Ok(diesel::delete(device::table.find(id)).execute(&self.0)?)
+        Ok(diesel::delete(device::table.find(id)).execute(self.0.as_ref())?)
     }
 
     fn update(&self, id: i32, upd: DeviceUpdate) -> dao::Result<usize> {
-        Ok(diesel::update(device::table.find(id)).set(upd).execute(&self.0)?)
+        Ok(diesel::update(device::table.find(id)).set(upd).execute(self.0.as_ref())?)
     }
 
     fn get(&self, id: i32) -> dao::Result<(Device, Vec<(Subsystem, Vec<Component>)>)> {
-        let dev: Device = device::table.find(id).first(&self.0)?;
-        let subs: Vec<Subsystem> = Subsystem::belonging_to(&dev).load(&self.0)?;
-        let coms: Vec<Component> = Component::belonging_to(&subs).load(&self.0)?;
+        let dev: Device = device::table.find(id).first(self.0.as_ref())?;
+        let subs: Vec<Subsystem> = Subsystem::belonging_to(&dev).load(self.0.as_ref())?;
+        let coms: Vec<Component> = Component::belonging_to(&subs).load(self.0.as_ref())?;
         let grouped_coms = coms.grouped_by(&subs);
         let grouped_subs_coms = subs.into_iter().zip(grouped_coms).collect();
         Ok((dev, grouped_subs_coms))
@@ -483,20 +489,20 @@ impl DeviceStorer for DeviceRepository {
         if let (Some(p), Some(s)) = (query.page, query.size) {
             q = q.limit(s).offset((p - 1) * s)
         }
-        let c = self.boxed_query(query).count().first(&self.0)?;
-        let devs: Vec<Device> = q.load(&self.0)?;
-        let subs: Vec<Subsystem> = Subsystem::belonging_to(&devs).load(&self.0)?;
-        let coms: Vec<Component> = Component::belonging_to(&subs).load(&self.0)?;
+        let c = self.boxed_query(query).count().first(self.0.as_ref())?;
+        let devs: Vec<Device> = q.load(self.0.as_ref())?;
+        let subs: Vec<Subsystem> = Subsystem::belonging_to(&devs).load(self.0.as_ref())?;
+        let coms: Vec<Component> = Component::belonging_to(&subs).load(self.0.as_ref())?;
         let grouped_coms: Vec<Vec<Component>> = coms.grouped_by(&subs);
         let grouped_subs_coms: Vec<Vec<(Subsystem, Vec<Component>)>> = subs.into_iter().zip(grouped_coms).grouped_by(&devs);
         Ok((devs.into_iter().zip(grouped_subs_coms).collect(), c))
     }
 }
 
-pub struct SubsystemRepository(MysqlConnection);
+pub struct SubsystemRepository(Rc<PooledConnection<ConnectionManager<MysqlConnection>>>);
 
 impl SubsystemRepository {
-    pub fn new(conn: MysqlConnection) -> Self {
+    pub fn new(conn: Rc<PooledConnection<ConnectionManager<MysqlConnection>>>) -> Self {
         SubsystemRepository(conn)
     }
 
@@ -517,25 +523,25 @@ impl SubsystemRepository {
 
 impl SubsystemStorer for SubsystemRepository {
     fn insert(&self, sub: SubsystemInsert) -> dao::Result<i32> {
-        diesel::insert_into(subsystem::table).values(sub).execute(&self.0)?;
-        Ok(select(last_insert_id).first(&self.0)?)
+        diesel::insert_into(subsystem::table).values(sub).execute(self.0.as_ref())?;
+        Ok(select(last_insert_id).first(self.0.as_ref())?)
     }
 
     fn bulk_insert(&self, subs: &Vec<SubsystemInsert>) -> dao::Result<usize> {
-        Ok(diesel::insert_into(subsystem::table).values(subs).execute(&self.0)?)
+        Ok(diesel::insert_into(subsystem::table).values(subs).execute(self.0.as_ref())?)
     }
 
     fn delete(&self, id: i32) -> dao::Result<usize> {
-        Ok(diesel::delete(subsystem::table.find(id)).execute(&self.0)?)
+        Ok(diesel::delete(subsystem::table.find(id)).execute(self.0.as_ref())?)
     }
 
     fn udpate(&self, id: i32, upd: SubsystemUpdate) -> dao::Result<usize> {
-        Ok(diesel::update(subsystem::table.find(id)).set(upd).execute(&self.0)?)
+        Ok(diesel::update(subsystem::table.find(id)).set(upd).execute(self.0.as_ref())?)
     }
 
     fn get(&self, id: i32) -> dao::Result<(Device, Subsystem, Vec<Component>)> {
-        let dev_sub: (Device, Subsystem) = device::table.inner_join(subsystem::table).filter(subsystem::id.eq(id)).first(&self.0)?;
-        let coms: Vec<Component> = Component::belonging_to(&dev_sub.1).load(&self.0)?;
+        let dev_sub: (Device, Subsystem) = device::table.inner_join(subsystem::table).filter(subsystem::id.eq(id)).first(self.0.as_ref())?;
+        let coms: Vec<Component> = Component::belonging_to(&dev_sub.1).load(self.0.as_ref())?;
         Ok((dev_sub.0, dev_sub.1, coms))
     }
 
@@ -544,16 +550,16 @@ impl SubsystemStorer for SubsystemRepository {
         if let (Some(p), Some(s)) = (query.page, query.size) {
             q = q.limit(s).offset((p - 1) * s)
         }
-        let v = q.load(&self.0)?;
-        let c = self.boxed_query(query).count().first(&self.0)?;
+        let v = q.load(self.0.as_ref())?;
+        let c = self.boxed_query(query).count().first(self.0.as_ref())?;
         Ok((v, c))
     }
 }
 
-pub struct ComponentRepository(MysqlConnection);
+pub struct ComponentRepository(Rc<PooledConnection<ConnectionManager<MysqlConnection>>>);
 
 impl ComponentRepository {
-    pub fn new(conn: MysqlConnection) -> Self {
+    pub fn new(conn: Rc<PooledConnection<ConnectionManager<MysqlConnection>>>) -> Self {
         ComponentRepository(conn)
     }
 
@@ -577,27 +583,27 @@ impl ComponentRepository {
 
 impl ComponentStorer for ComponentRepository {
     fn insert(&self, com: ComponentInsert) -> dao::Result<i32> {
-        diesel::insert_into(component::table).values(com).execute(&self.0)?;
-        Ok(select(last_insert_id).first(&self.0)?)
+        diesel::insert_into(component::table).values(com).execute(self.0.as_ref())?;
+        Ok(select(last_insert_id).first(self.0.as_ref())?)
     }
 
     fn bulk_insert(&self, coms: &Vec<ComponentInsert>) -> dao::Result<usize> {
-        Ok(diesel::insert_into(component::table).values(coms).execute(&self.0)?)
+        Ok(diesel::insert_into(component::table).values(coms).execute(self.0.as_ref())?)
     }
 
     fn delete(&self, id: i32) -> dao::Result<usize> {
-        Ok(diesel::delete(component::table.find(id)).execute(&self.0)?)
+        Ok(diesel::delete(component::table.find(id)).execute(self.0.as_ref())?)
     }
 
     fn update(&self, id: i32, upd: ComponentUpdate) -> dao::Result<usize> {
-        Ok(diesel::update(component::table.find(id)).set(upd).execute(&self.0)?)
+        Ok(diesel::update(component::table.find(id)).set(upd).execute(self.0.as_ref())?)
     }
 
     fn get(&self, id: i32) -> dao::Result<(Device, Subsystem, Component)> {
         let g: (Device, (Subsystem, Component)) = device::table
             .inner_join(subsystem::table.inner_join(component::table))
             .filter(component::id.eq(id))
-            .first(&self.0)?;
+            .first(self.0.as_ref())?;
         Ok((g.0, (g.1).0, (g.1).1))
     }
 
@@ -606,23 +612,23 @@ impl ComponentStorer for ComponentRepository {
         if let (Some(p), Some(s)) = (query.page, query.size) {
             q = q.limit(s).offset((p - 1) * s)
         }
-        let v = q.load(&self.0)?;
-        let c = self.boxed_query(query).count().first(&self.0)?;
+        let v = q.load(self.0.as_ref())?;
+        let c = self.boxed_query(query).count().first(self.0.as_ref())?;
         Ok((v, c))
     }
 }
 
-pub struct RelationRepository(MysqlConnection);
+pub struct RelationRepository(Rc<PooledConnection<ConnectionManager<MysqlConnection>>>);
 
 impl RelationRepository {
-    pub fn new(conn: MysqlConnection) -> RelationRepository {
+    pub fn new(conn: Rc<PooledConnection<ConnectionManager<MysqlConnection>>>) -> RelationRepository {
         RelationRepository(conn)
     }
 }
 
 impl RelationStorer for RelationRepository {
     fn insert_deviceinfo_subsysteminfo(&self, rel: DevinfoSubinfoInsert) -> dao::Result<usize> {
-        Ok(diesel::insert_into(deviceinfo_subsysteminfo::table).values(rel).execute(&self.0)?)
+        Ok(diesel::insert_into(deviceinfo_subsysteminfo::table).values(rel).execute(self.0.as_ref())?)
     }
 
     fn delete_deviceinfo_subsysteminfo(&self, devinfo_id: i32, subinfo_id: i32) -> dao::Result<usize> {
@@ -632,17 +638,17 @@ impl RelationStorer for RelationRepository {
                     .eq(devinfo_id)
                     .and(deviceinfo_subsysteminfo::subsystem_info_id.eq(subinfo_id)),
             )
-            .execute(&self.0)?)
+            .execute(self.0.as_ref())?)
     }
 
     fn bulk_delete_deviceinfo_subsysteminfo(&self, devinfo_id: i32) -> dao::Result<usize> {
         Ok(diesel::delete(deviceinfo_subsysteminfo::table)
             .filter(deviceinfo_subsysteminfo::device_info_id.eq(devinfo_id))
-            .execute(&self.0)?)
+            .execute(self.0.as_ref())?)
     }
 
     fn insert_subsysteminfo_componentinfo(&self, rel: SubinfoCominfoInsert) -> dao::Result<usize> {
-        Ok(diesel::insert_into(subsysteminfo_componentinfo::table).values(rel).execute(&self.0)?)
+        Ok(diesel::insert_into(subsysteminfo_componentinfo::table).values(rel).execute(self.0.as_ref())?)
     }
 
     fn delete_subsysteminfo_componentinfo(&self, devinfo_id: i32, subinfo_id: i32, cominfo_id: i32) -> dao::Result<usize> {
@@ -653,7 +659,7 @@ impl RelationStorer for RelationRepository {
                     .and(subsysteminfo_componentinfo::subsystem_info_id.eq(subinfo_id))
                     .and(subsysteminfo_componentinfo::component_info_id.eq(cominfo_id)),
             )
-            .execute(&self.0)?)
+            .execute(self.0.as_ref())?)
     }
 
     fn bulk_delete_subsysteminfo_componentinfo(&self, devinfo_id: i32, subinfo_id: i32) -> dao::Result<usize> {
@@ -663,6 +669,6 @@ impl RelationStorer for RelationRepository {
                     .eq(devinfo_id)
                     .and(subsysteminfo_componentinfo::subsystem_info_id.eq(subinfo_id)),
             )
-            .execute(&self.0)?)
+            .execute(self.0.as_ref())?)
     }
 }

@@ -1,5 +1,6 @@
 use super::dao::*;
 use super::model::*;
+use rocket::request::{FromRequest, Outcome, Request};
 use std::error::Error;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -27,6 +28,52 @@ pub struct Service {
     pub sub: Box<dyn SubsystemStorer>,
     pub com: Box<dyn ComponentStorer>,
     pub rel: Box<dyn RelationStorer>,
+}
+
+impl Service {
+    pub fn new(
+        devinfo: Box<dyn DeviceInfoStorer>,
+        subinfo: Box<dyn SubsystemInfoStorer>,
+        cominfo: Box<dyn ComponentInfoStorer>,
+        dev: Box<dyn DeviceStorer>,
+        sub: Box<dyn SubsystemStorer>,
+        com: Box<dyn ComponentStorer>,
+        rel: Box<dyn RelationStorer>,
+    ) -> Self {
+        Service {
+            devinfo,
+            subinfo,
+            cominfo,
+            dev,
+            sub,
+            com,
+            rel,
+        }
+    }
+}
+
+use super::storer::mysqlstorer;
+use std::rc::Rc;
+use diesel::r2d2::{ConnectionManager, Pool};
+use rocket::State;
+use diesel::MysqlConnection;
+
+impl<'a, 'r> FromRequest<'a, 'r> for Service {
+    type Error = ();
+    fn from_request(req: &'a Request<'r>) -> Outcome<Self, Self::Error> {
+        let pool = req.guard::<State<Pool<ConnectionManager<MysqlConnection>>>>()?;
+        let conn = Rc::new(pool.get().unwrap());
+        let svc = Service {
+            devinfo: Box::new(mysqlstorer::DeviceInfoRepository::new(conn.clone())),
+            subinfo: Box::new(mysqlstorer::SubsystemInfoRepository::new(conn.clone())),
+            cominfo: Box::new(mysqlstorer::ComponentInfoRepository::new(conn.clone())),
+            dev: Box::new(mysqlstorer::DeviceRepository::new(conn.clone())),
+            sub: Box::new(mysqlstorer::SubsystemRepository::new(conn.clone())),
+            com: Box::new(mysqlstorer::ComponentRepository::new(conn.clone())),
+            rel: Box::new(mysqlstorer::RelationRepository::new(conn.clone())),
+        };
+        Outcome::Success(svc)
+    }
 }
 
 impl Server for Service {

@@ -35,6 +35,7 @@ impl Deref for MysqlConn {
     }
 }
 
+
 impl<'a, 'r> FromRequest<'a, 'r> for MysqlConn {
     type Error = ();
     fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
